@@ -12,13 +12,14 @@ import arguments
 
 args = arguments.get_args()
 
-log_name = '{}_{}_{}_memsz_{}_lr_{}_batch_{}_epoch_{}'.format(args.date,
-                                                              args.dataset,
-                                                              args.seed,
-                                                              args.memory_budget,
-                                                              args.lr,
-                                                              args.batch_size,
-                                                              args.epochs_class)
+log_name = '{}_{}_{}_memsz_{}_alpha_{}_lr_{}_batch_{}_epoch_{}'.format(args.date,
+                                                                       args.dataset,
+                                                                       args.seed,
+                                                                       args.memory_budget,
+                                                                       args.alpha,
+                                                                       args.lr,
+                                                                       args.batch_size,
+                                                                       args.epochs_class)
 
 
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)

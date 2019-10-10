@@ -7,6 +7,8 @@ def get_args():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--lr', type=float, default=2.0, metavar='LR',
                         help='learning rate (default: 2.0). Note that lr is decayed by args.gamma parameter args.schedule ')
+    parser.add_argument('--alpha', type=float, default=0.3, metavar='LR',
+                        help='KD convex combination.')
     parser.add_argument('--schedule', type=int, nargs='+', default=[45, 60, 68],
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--gammas', type=float, nargs='+', default=[0.2, 0.2, 0.2],
@@ -17,6 +19,8 @@ def get_args():
                         help='Seeds values to be used; seed introduces randomness by changing order of classes')
     parser.add_argument('--decay', type=float, default=0.00005, help='Weight decay (L2 penalty).')
     parser.add_argument('--step-size', type=int, default=10, help='How many classes to add in each increment')
+    parser.add_argument('--lr', type=float, default=2.0, metavar='LR',
+                        help='learning rate (default: 2.0). Note that lr is decayed by args.gamma parameter args.schedule ')
     parser.add_argument('--memory-budget', type=int, default=2000,
                         help='How many images can we store at max. 0 will result in fine-tuning')
     parser.add_argument('--epochs-class', type=int, default=70, help='Number of epochs for each increment')

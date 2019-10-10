@@ -12,7 +12,6 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
 from tqdm import tqdm
 
 import networks
@@ -102,11 +101,14 @@ class Trainer(GenericTrainer):
         self.optimizer_single = optimizer
 
     def train(self, epoch):
-
+        
+        T=2
+        
         self.model.train()
         print("Epochs %d"%epoch)
         for data, y, target in tqdm(self.train_data_iterator):
             data, y, target = data.cuda(), y.cuda(), target.cuda()
+            
             tasknum = self.train_data_iterator.dataset.t
             if tasknum > 0:
                 data_r, y_r, target_r = self.train_data_iterator.dataset.sample_exemplar()
@@ -121,30 +123,15 @@ class Trainer(GenericTrainer):
             y_onehot.zero_()
             target.unsqueeze_(1)
             y_onehot.scatter_(1, target, 1)
-
-            output = self.model(Variable(data))
+        
+            soft_target = self.model_fixed(data, T=T)
+            output = self.model(data)
             
-            
-            loss = F.kl_div(output, Variable(y_onehot))
-            # exemplar 이용해서 Knowledge distillation 짜보기.
-#             tasknum = self.train_data_iterator.dataset.t
-#             if tasknum > 0:
-#                 data, y, target = self.train_data_iterator.dataset.sample_exemplar()
-#                 data, y, target = data.cuda(), y.cuda(), target.cuda()
-#                 y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
-
-#                 y_onehot.zero_()
-#                 target.unsqueeze_(1)
-#                 y_onehot.scatter_(1, target, 1)
-
-#                 output = self.model(Variable(data))
-
-
-#                 loss = F.kl_div(output, Variable(y_onehot)) + loss
-                
+            loss_KD = F.kl_div(output, soft_target) * (T**2) * self.args.alpha
+            loss_CE = F.kl_div(output, y_onehot) * (1-self.args.alpha)
             
             self.optimizer.zero_grad()
-            loss.backward()
+            (loss_KD + loss_CE).backward()
             self.optimizer.step()
 
     def add_model(self):
