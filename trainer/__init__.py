@@ -1,2 +1,2 @@
 from trainer.evaluator import *
-from trainer.trainer import *
+from trainer.trainer_factory import *

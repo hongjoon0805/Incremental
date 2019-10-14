@@ -105,7 +105,7 @@ class CifarResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x, T=1):
+    def forward(self, x):
 
         x = self.conv_1_3x3(x)
         x = F.relu(self.bn_1(x), inplace=True)
@@ -114,9 +114,10 @@ class CifarResNet(nn.Module):
         x = self.stage_3(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.fc(x) / T
+        x = self.fc(x)
+        return x
 
-        return F.log_softmax(x, dim=1)
+#         return F.log_softmax(x, dim=1)
 
 
 def resnet32(num_classes=10):
