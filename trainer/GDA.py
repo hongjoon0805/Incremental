@@ -1,8 +1,10 @@
-''' Incremental-Classifier Learning 
- Authors : Khurram Javed, Muhammad Talha Paracha
- Maintainer : Khurram Javed
- Lab : TUKL-SEECS R&D Lab
- Email : 14besekjaved@seecs.edu.pk '''
+# GDA 기반의 incremental learning 코드 짜기
+# output linaer model에 bias가 있을 수 있으니 linear model로 classify 하지 말고 generative model로 classify 하자
+# feature space regularization이 무조건 있어야한다
+# Class incremental learning은 결국 linear classification이다. 그래서 Fisher's linear discriminant를 많이 참고하면 좋을 듯하다.
+# Within class variance를 줄이고 between class variance를 키우는게 좋다.
+# UCL은 weight space에 noise를 주었는데, Incremental learning에서는 feature space에 noise를 주어 중요한 dimension을 확보해야겠다. 
+# Feature space에서 regularization을 줄 수 있는 Bayesian online learning framework를 사용하자.
 
 from __future__ import print_function
 
@@ -13,6 +15,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
+
+from bayes_layer import NoiseLayer
+import math
 
 import networks
 
@@ -67,7 +72,6 @@ class Trainer(GenericTrainer):
         :param class_group: 
         :return: N/A. Only has side-affects 
         '''
-        
 
     def setup_training(self):
         
@@ -107,6 +111,7 @@ class Trainer(GenericTrainer):
         self.model.train()
         print("Epochs %d"%epoch)
         tasknum = self.train_data_iterator.dataset.t
+        classes = self.args.step_size * (tasknum+1)
         for data, y, target in tqdm(self.train_data_iterator):
             data, y, target = data.cuda(), y.cuda(), target.cuda()
             
@@ -123,51 +128,37 @@ class Trainer(GenericTrainer):
             y_onehot.zero_()
             target.unsqueeze_(1)
             y_onehot.scatter_(1, target, 1)
+            target = target.squeeze()
             
-            output = self.model(data)
+            output, features = self.model(data, feature_return=True)
+            score, saver_features = self.model_fixed(data, feature_return=True)
             
             start = 0
             end = (tasknum+1) * self.args.step_size
-#             start = (tasknum) * self.args.step_size
-#             end = (tasknum+1) * self.args.step_size
             
-            ###############################################################################################################
-            # gradient scale
-            # gradient의 norm을 출력 해봐야한다. 진짜로 norm의 차이가 큰지 확인해봐야함.
-#             if tasknum>0:
-#                 y_onehot[self.args.batch_size:] *= self.args.alpha
-            ###############################################################################################################
-            
+            # classification loss
             output_log = F.log_softmax(output[:,start:end], dim=1)
             loss_CE = F.kl_div(output_log, y_onehot[:,start:end], reduction='batchmean')
             
-            loss_KD = 0
-            if tasknum > 0:
-                score = self.model_fixed(data).data
-                loss_KD = torch.zeros(tasknum).cuda()
-                for t in range(tasknum):
-                    
-                    # local distillation
-                    start = (t) * self.args.step_size
-                    end = (t+1) * self.args.step_size
-
-                    soft_target = F.softmax(score[:,start:end] / T, dim=1)
-                    output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-                    loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
-                
-                loss_KD = loss_KD.sum()
-                
-#                 # global distillation
-#                 start = 0
-#                 end = (tasknum) * self.args.step_size
-                
-#                 soft_target = F.softmax(score[:,start:end] / T, dim=1)
-#                 output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-#                 loss_KD = loss_KD + F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
-                
+            # feature space regularization
+            loss_features = self.feature_regularization(features, saver_features, tasknum)
+            
+            # compute class conditional mean & total mean & totalFeatures
+            class_means, means, totalFeatures = self.compute_means(tasknum, features, target)
+            
+            # compute within class covariance
+            loss_S_W = self.within_var(features, target, class_means)
+            
+            # compute between class covariance
+            loss_S_B = self.between_var(class_means, means, totalFeatures)
+            
+            # SGD
             self.optimizer.zero_grad()
-            (loss_KD + loss_CE).backward()
+            (loss_CE + loss_features + loss_S_W/loss_S_B * self.args.alpha).backward()
             self.optimizer.step()
+        
+        print(loss_CE)
+#         print(loss_S_W/loss_S_B * 0.1)
 
     def add_model(self):
         model = copy.deepcopy(self.model_single)
@@ -176,3 +167,64 @@ class Trainer(GenericTrainer):
             param.requires_grad = False
         self.models.append(model)
         print("Total Models %d"%len(self.models))
+        
+    def feature_regularization(self, trainer_features, saver_features, tasknum):
+        
+        sigma_reg = 0
+        feature_reg = 0
+        
+        saved = 0
+        if tasknum>0:
+            saved = 1
+            
+        for (_, saver_layer), (_, trainer_layer) in zip(self.model_fixed.named_children(), self.model.named_children()):
+            if isinstance(trainer_layer, NoiseLayer)==False:
+                continue
+            
+            in_features = saver_layer.rho.shape[0]
+            
+            std_init = math.sqrt(in_features * self.args.ratio)
+            trainer_sigma = torch.log1p(torch.exp(trainer_layer.rho))
+            saver_sigma = torch.log1p(torch.exp(saver_layer.rho))
+            
+            feature_reg_strength = std_init / saver_sigma
+            
+            featue_reg = (feature_reg_strength * (trainer_features - saver_features)).norm(2) ** 2
+            
+            grace_forget = (trainer_sigma / 100) ** 2 - torch.log((trainer_sigma / 100) ** 2).sum()
+            sigma_reg = ((trainer_sigma / saver_sigma) ** 2 - torch.log((trainer_sigma / saver_sigma) ** 2)).sum()
+            
+            sigma_grace_forget_reg = sigma_reg + grace_forget
+            
+#         return self.args.beta * sigma_reg + saved * feature_reg
+        return sigma_reg + saved * feature_reg
+        
+    def compute_means(self, tasknum, features, target):
+        # feature normalize?
+        
+        classes = self.args.step_size * (tasknum+1)
+        class_means = torch.zeros((classes, self.model.featureSize)).cuda()
+        totalFeatures = torch.zeros((classes, 1)).cuda()
+
+        class_means.index_add_(0,target,features)
+        totalFeatures.index_add_(0,target,torch.ones(target.shape[0]))
+        
+        means = (class_means * totalFeatures).sum(dim=0) / target.shape[0]
+        
+        return class_means, means, totalFeatures
+    
+    def within_var(self, features, target, class_means):
+        classes = class_means.shape[0]
+        featureSize = features.shape[1]
+        batchSize = features.shape[0]
+        xn_mk = features-class_means[target]
+        S_W_batch = torch.bmm(xn_mk.unsqueeze(2), xn_mk.unsqueeze(1))
+        S_W_sum = torch.abs(S_W_batch).sum()
+        return S_W_sum
+    
+    def between_var(self, class_means, means, totalFeatures):
+        mk_m = class_means - means
+        S_B_batch = torch.bmm(mk_m.unsqueeze(2), mk_m.unsqueeze(1)) * totalFeatures.unsqueeze(2)
+        S_B_sum = torch.abs(S_B_batch).sum()
+        return S_B_sum
+        

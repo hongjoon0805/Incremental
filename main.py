@@ -63,7 +63,7 @@ kwargs = {'num_workers': 1, 'pin_memory': True}
 
 # Iterator to iterate over training data.
 train_iterator = torch.utils.data.DataLoader(train_dataset_loader,
-                                             batch_size=args.batch_size, shuffle=True, **kwargs)
+                                             batch_size=args.batch_size, shuffle=True, drop_last=True, **kwargs)
 
 # Iterator to iterate over test data
 test_iterator = torch.utils.data.DataLoader(test_dataset_loader,
@@ -76,12 +76,15 @@ myModel = networks.ModelFactory.get_model(args.dataset, args.ratio, args.trainer
 # Define the optimizer used in the experiment
 optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
                             weight_decay=args.decay, nesterov=True)
+# if args.trainer == 'bayes':
+#     optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum, nesterov=True)
 
 # Trainer object used for training
 myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
 
 # Initilize the evaluators used to measure the performance of the system.
 t_classifier = trainer.EvaluatorFactory.get_evaluator("trainedClassifier")
+gda_classifier = trainer.EvaluatorFactory.get_evaluator("generativeClassifier")
 
 results = np.zeros(dataset.classes // args.step_size)
 
@@ -98,11 +101,20 @@ for t in range(dataset.classes//args.step_size):
         myTrainer.train(epoch)
         # print(my_trainer.threshold)
         if epoch % 5 == (5 - 1):
-            TrainError = t_classifier.evaluate(myTrainer.model, train_iterator, t, args.step_size, 'train')
-            TestError = t_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
+            TrainError_softmax = t_classifier.evaluate(myTrainer.model, train_iterator, t, args.step_size, 'train')
+            TestError_softmax = t_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
             print("*********CURRENT EPOCH********** : %d"%epoch)
-            print("Train Classifier: %0.2f"%TrainError)
-            print("Test Classifier: %0.2f"%TestError)
+            print("Train Classifier (Softmax): %0.2f"%TrainError_softmax)
+            print("Test Classifier (Softmax): %0.2f"%TestError_softmax)
+            if args.trainer == 'gda':
+                
+                gda_classifier.update_moment(myTrainer.model, train_iterator, args.step_size)
+                TrainError_gda = gda_classifier.evaluate(myTrainer.model, train_iterator, t, args.step_size, 'train')
+                TestError_gda = gda_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
+                
+                print("Train Classifier (GDA): %0.2f"%TrainError_gda)
+                print("Test Classifier (GDA): %0.2f"%TestError_gda)
+            
 
     
     # Evaluate the learned classifier

@@ -116,7 +116,6 @@ class Trainer(GenericTrainer):
             output = self.model(data)
             
             start = tasknum * self.args.step_size
-#             start = 0
             end = (tasknum+1) * self.args.step_size
             
             output_log = F.log_softmax(output[:,start:end], dim=1)
@@ -127,14 +126,24 @@ class Trainer(GenericTrainer):
                 score = self.model_fixed(data).data
                 loss_KD = torch.zeros(tasknum).cuda()
                 for t in range(tasknum):
-                
-                    start = (tasknum) * self.args.step_size
-                    end = (tasknum+1) * self.args.step_size
+                    
+                    # local distillation
+                    start = (t) * self.args.step_size
+                    end = (t+1) * self.args.step_size
 
                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
                     loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
+                
                 loss_KD = loss_KD.sum()
+                
+                # global distillation
+#                 start = 0
+#                 end = (tasknum) * self.args.step_size
+                
+#                 soft_target = F.softmax(score[:,start:end] / T, dim=1)
+#                 output_log = F.log_softmax(output[:,start:end] / T, dim=1)
+#                 loss_KD = loss_KD + F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
                 
             self.optimizer.zero_grad()
             (loss_KD + loss_CE).backward()

@@ -99,6 +99,9 @@ class Trainer(GenericTrainer):
         myModel = networks.ModelFactory.get_model(self.args.dataset, self.args.ratio).cuda()
         optimizer = torch.optim.SGD(myModel.parameters(), self.args.lr, momentum=self.args.momentum,
                                     weight_decay=self.args.decay, nesterov=True)
+        
+#         if self.args.trainer == 'bayes':
+#             optimizer = torch.optim.SGD(myModel.parameters(), self.args.lr, momentum=self.args.momentum, nesterov=True)
         myModel.eval()
 
         self.current_lr = self.args.lr
@@ -116,29 +119,51 @@ class Trainer(GenericTrainer):
         end = self.train_data_iterator.dataset.end
         
         print("Epochs %d"%epoch)
+        tasknum = self.train_data_iterator.dataset.t
         for data, y, target in tqdm(self.train_data_iterator):
             data, y, target = data.cuda(), y.cuda(), target.cuda()
             
-            tasknum = self.train_data_iterator.dataset.t
-                
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
             y_onehot.zero_()
             target.unsqueeze_(1)
             y_onehot.scatter_(1, target, 1)
             
-            output = self.model(data)
-            output_log = F.log_softmax(output, dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot) 
+            output = self.model(data, sample=True)
+            
+            start = tasknum * self.args.step_size
+            end = (tasknum+1) * self.args.step_size
+            
+            output_log = F.log_softmax(output[:,start:end], dim=1)
+            loss_CE = F.kl_div(output_log, y_onehot[:,start:end])
             
             loss_KD = 0
             if tasknum > 0:
-                loss_KD = torch.zeros(self.args.sample).cuda()
+                loss_KD = torch.zeros((self.args.sample,tasknum)).cuda()
                 for s in range(self.args.sample):
-                    score = self.model_fixed(data)
-                    soft_target = F.softmax(score / T, dim=1)
-                    output_log = F.log_softmax(output / T, dim=1)
-                    loss_KD[s] = F.kl_div(output_log, soft_target) * (T**2)
+                    score = self.model_fixed(data, sample=True)
+                    for t in range(tasknum):
+                        
+                        # local distillation
+                        start = (t) * self.args.step_size
+                        end = (t+1) * self.args.step_size
+                        
+                        soft_target = F.softmax(score[:,start:end] / T, dim=1)
+                        output_log = F.log_softmax(output[:,start:end] / T, dim=1)
+                        
+                        loss_KD[s][t] = F.kl_div(output_log, soft_target) * (T**2)
+                        
+                    loss_KD[s] = loss_KD[s].sum()
+                    
+                    # global distillation
+#                     start = 0
+#                     end = (tasknum) * self.args.step_size
+
+#                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
+#                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
+#                     loss_KD[s] = loss_KD[s] + F.kl_div(output_log, soft_target) * (T**2)
+                    
+                    
                 loss_KD = loss_KD.mean()
             
             reg_loss = self.custom_regularization(self.model_fixed, self.model, tasknum).cuda()
@@ -231,9 +256,9 @@ class Trainer(GenericTrainer):
             
         
         # L2 loss
-        loss = loss + 0.3 * (mu_weight_reg_sum + mu_bias_reg_sum)
+#         loss = loss + self.args.decay * (mu_weight_reg_sum + mu_bias_reg_sum)
         # L1 loss
-        loss = loss + saved * (L1_mu_weight_reg_sum + L1_mu_bias_reg_sum)
+#         loss = loss + saved * (L1_mu_weight_reg_sum + L1_mu_bias_reg_sum)
         # sigma regularization
         loss = loss + self.args.beta * (sigma_weight_reg_sum + sigma_weight_normal_reg_sum)
             

@@ -3,11 +3,14 @@ class ModelFactory():
         pass
 
     @staticmethod
-    def get_model(dataset="CIFAR100", ratio=1/512, trainer = 'bayes'):
+    def get_model(dataset="CIFAR100", ratio=1/512, trainer = 'gda'):
         
         if dataset == 'CIFAR100':
             if trainer == 'bayes':
                 import networks.resnet32_ucl as res
+                return res.resnet32(100, ratio)
+            elif trainer == 'gda':
+                import networks.resnet32_gda as res
                 return res.resnet32(100, ratio)
             else:
                 import networks.resnet32 as res
