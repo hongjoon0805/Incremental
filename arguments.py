@@ -23,7 +23,9 @@ def get_args():
     parser.add_argument('--memory-budget', type=int, default=2000,
                         help='How many images can we store at max. 0 will result in fine-tuning')
     parser.add_argument('--epochs-class', type=int, default=100, help='Number of epochs for each increment')
+    parser.add_argument('--base-classes', type=int, default=100, help='Number of epochs for each increment')
     parser.add_argument('--sample', type=int, default=5, help='Number of samples in BNN')
+#     parser.add_argument('--out-channels', type=int, default=64, help='Number of output channels in Resnet')
     parser.add_argument('--date', type=str, default='', help='(default=%(default)s)')
     parser.add_argument('--dataset', default='', type=str, required=True,
                         choices=['CIFAR100', 

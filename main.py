@@ -15,17 +15,18 @@ torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 args = arguments.get_args()
 
-log_name = '{}_{}_{}_{}_memsz_{}_alpha_{}_s_{}_beta_{}_lr_{}_batch_{}_epoch_{}'.format(args.date,
-                                                                                       args.dataset,
-                                                                                       args.trainer,
-                                                                                       args.seed,
-                                                                                       args.memory_budget,
-                                                                                       args.alpha,
-                                                                                       args.sample,
-                                                                                       args.beta,
-                                                                                       args.lr,
-                                                                                       args.batch_size,
-                                                                                       args.epochs_class)
+log_name = '{}_{}_{}_{}_memsz_{}_alpha_{}_ratio_{:.8f}_beta_{}_lr_{}_out_{}_batch_{}_epoch_{}'.format(args.date,
+                                                                                                      args.dataset,
+                                                                                                      args.trainer,
+                                                                                                      args.seed,
+                                                                                                      args.memory_budget,
+                                                                                                      args.alpha,
+                                                                                                      args.ratio,
+                                                                                                      args.beta,
+                                                                                                      args.lr,
+                                                                                                      args.out_channels,
+                                                                                                      args.batch_size,
+                                                                                                      args.epochs_class)
 
 
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
@@ -70,7 +71,7 @@ test_iterator = torch.utils.data.DataLoader(test_dataset_loader,
                                             batch_size=args.batch_size, shuffle=False, **kwargs)
 
 # Get the required model
-myModel = networks.ModelFactory.get_model(args.dataset, args.ratio, args.trainer).cuda()
+myModel = networks.ModelFactory.get_model(args.dataset, args.ratio, args.trainer, args.out_channels).cuda()
 # myModel = networks.ModelFactory.get_model(args.dataset).cuda()
 
 # Define the optimizer used in the experiment
@@ -84,9 +85,11 @@ myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, da
 
 # Initilize the evaluators used to measure the performance of the system.
 t_classifier = trainer.EvaluatorFactory.get_evaluator("trainedClassifier")
-gda_classifier = trainer.EvaluatorFactory.get_evaluator("generativeClassifier")
+results_soft = np.zeros(dataset.classes // args.step_size)
+if args.trainer == 'gda':
+    gda_classifier = trainer.EvaluatorFactory.get_evaluator("generativeClassifier")
+    results_gda = np.zeros(dataset.classes // args.step_size)
 
-results = np.zeros(dataset.classes // args.step_size)
 
 # Loop that incrementally adds more and more classes
 for t in range(dataset.classes//args.step_size):
@@ -118,13 +121,28 @@ for t in range(dataset.classes//args.step_size):
 
     
     # Evaluate the learned classifier
-
-    TestError = t_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
-    print("Test Classifier Final: %0.2f"%TestError)
+    
+    # t-SNE visualization tool 짜놓기
+    # 각 task에 대한 test accuracy를 만들 수 있는 dataloader & output 코드 짜놓기.
+    # class incremental accuracy, task test accuracy(use all heads), task test accuracy(use step-size head)
+    # Resovior sampling 자체가 잘못되었나? resorvior sampling이 각 class를 uniform하게 가지고 있는지 알아보자.
+    
+    
+    TestError_softmax = t_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
+    print("Test Classifier Final(Softmax): %0.2f"%TestError_softmax)
+    results_soft[t] = TestError_softmax
+    np.savetxt('./result_data/'+log_name+'_Soft.txt', results_soft, '%.4f')
+    
+    break
+    
+    if args.trainer == 'gda':
+        gda_classifier.update_moments(myTrainer.model, train_iterator, args.step_size)
+        TestError_gda = gda_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
+        print("Test Classifier Final(GDA): %0.2f"%TestError_gda)
+        results_gda[t] = TestError_gda
+        np.savetxt('./result_data/'+log_name+'_GDA.txt', results_gda, '%.4f')
     
     myTrainer.setup_training()
-    results[t] = TestError
-    np.savetxt('./result_data/'+log_name+'.txt', results, '%.4f')
     torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
 
 

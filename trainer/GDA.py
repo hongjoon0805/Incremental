@@ -137,6 +137,10 @@ class Trainer(GenericTrainer):
             end = (tasknum+1) * self.args.step_size
             
             # classification loss
+            # binary cross entropy loss로 해보자.
+            # AAAI2020에 submit된 논문 참고하자. distance based training도 생각해봐야함.
+            # embedding 관점에서 문제를 해결해야 한다.
+            # iCaRL을 내가 reproduce 해봐야하나?
             output_log = F.log_softmax(output[:,start:end], dim=1)
             loss_CE = F.kl_div(output_log, y_onehot[:,start:end], reduction='batchmean')
             
@@ -189,15 +193,17 @@ class Trainer(GenericTrainer):
             
             feature_reg_strength = std_init / saver_sigma
             
-            featue_reg = (feature_reg_strength * (trainer_features - saver_features)).norm(2) ** 2
+            featue_reg = ((feature_reg_strength * (trainer_features - saver_features)).norm(2,dim=1) ** 2).sum()
+            featue_reg = featue_reg / trainer_features.shape[0]
             
             grace_forget = (trainer_sigma / 100) ** 2 - torch.log((trainer_sigma / 100) ** 2).sum()
             sigma_reg = ((trainer_sigma / saver_sigma) ** 2 - torch.log((trainer_sigma / saver_sigma) ** 2)).sum()
             
-            sigma_grace_forget_reg = sigma_reg + grace_forget
+#             sigma_grace_forget_reg = sigma_reg + grace_forget
+            sigma_grace_forget_reg = sigma_reg
             
 #         return self.args.beta * sigma_reg + saved * feature_reg
-        return sigma_reg + saved * feature_reg
+        return sigma_reg * self.args.beta + saved * feature_reg
         
     def compute_means(self, tasknum, features, target):
         # feature normalize?

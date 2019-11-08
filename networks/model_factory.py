@@ -3,7 +3,7 @@ class ModelFactory():
         pass
 
     @staticmethod
-    def get_model(dataset="CIFAR100", ratio=1/512, trainer = 'gda'):
+    def get_model(dataset, ratio, trainer, out_channels):
         
         if dataset == 'CIFAR100':
             if trainer == 'bayes':
@@ -14,7 +14,7 @@ class ModelFactory():
                 return res.resnet32(100, ratio)
             else:
                 import networks.resnet32 as res
-                return res.resnet32(100)
+                return res.resnet32(100, out_channels)
         elif dataset == 'Imagenet':
             if trainer == 'bayes':
                 import networks.resnet18_ucl as res

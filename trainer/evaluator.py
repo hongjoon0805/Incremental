@@ -48,21 +48,21 @@ class GDA():
         
         # Iterate over all train Dataset
         for data, y, target in train_loader:
-            data = data.cuda()
+            data, target = data.cuda(), target.cuda()
             _, features = model.forward(data, feature_return=True)
-            featuresNp = features.data.cpu().numpy()
             
             if tasknum > 0:
                 data_r, y_r, target_r = train_loader.dataset.sample_exemplar()
-                data_r = data_r.cuda()
+                data_r, target_r = data_r.cuda(), target_r.cuda()
 
                 _,_,data_r_feature = model.forward(data_r, sample=True)
 
-                features = torch.cat((features, data_r_features))
-                target = np.hstack((target,target_r))
+                features = torch.cat((features, data_r_feature))
+                target = torch.cat((target,target_r))
             
-            np.add.at(class_means, target, featuresNp)
-            np.add.at(totalFeatures, target, 1)
+            featuresNp = features.data.cpu().numpy()
+            np.add.at(class_means, target.data.cpu().numpy(), featuresNp)
+            np.add.at(totalFeatures, target.data.cpu().numpy(), 1)
 
         
         class_means = class_means / totalFeatures
@@ -71,27 +71,27 @@ class GDA():
         covariance = np.zeros((model.featureSize, model.featureSize),dtype=np.float32)
         
         for data, y, target in train_loader:
-            data = data.cuda()
+            data, target = data.cuda(), target.cuda()
             _, features = model.forward(data, feature_return=True)
-            featuresNp = features.data.cpu().numpy()
             
             if tasknum > 0:
                 
                 data_r, y_r, target_r = train_loader.dataset.sample_exemplar()
-                data_r = data_r.cuda()
+                data_r, target_r = data_r.cuda(), target_r.cuda()
 
                 _,_,data_r_feature = model.forward(data_r, sample=True)
 
-                features = torch.cat((features, data_r_features))
-                target = np.hstack((target,target_r))
+                features = torch.cat((features, data_r_feature))
+                target = torch.cat((target,target_r))
             
-            vec = featuresNp - class_means[target]
+            featuresNp = features.data.cpu().numpy()
+            vec = featuresNp - class_means[target.data.cpu().numpy()]
             np.expand_dims(vec, axis=2)
             cov = np.matmul(np.expand_dims(vec, axis=2), np.expand_dims(vec, axis=1)).sum(axis=0)
             covariance += cov
         
-        covariance = covariance / totalFeatures.sum()
-        print(covariance)
+        #avoid singular matrix
+        covariance = covariance / totalFeatures.sum() + np.eye(model.featureSize, dtype=np.float32) * 1e-9
         precision = inv(covariance)
         
         self.class_means = torch.from_numpy(class_means).cuda()
@@ -118,12 +118,11 @@ class GDA():
                 target = target%step_size
             end = (tasknum+1) * step_size
             
-            batch_vec = (features.unsqueeze(1) - self.class_means[start:end].unsqueeze(0)).view(-1,features.shape[1])
-            temp = torch.matmul(batch_vec,self.precision).unsqueeze(1)
-            Mahalanobis = torch.matmul(temp,batch_vec.unsqueeze(2)).view(-1,end-start)
-            print(Mahalanobis.shape)
+#             batch_vec = (features.unsqueeze(1) - self.class_means[start:end].unsqueeze(0)).view(-1,features.shape[1])
+            batch_vec = (features.unsqueeze(1) - self.class_means[start:end].unsqueeze(0))
+            temp = torch.matmul(batch_vec, self.precision)
+            Mahalanobis = torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3))
             _, pred = torch.min(Mahalanobis,1)
-            print(pred.shape)
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
             self.class_means = self.class_means.squeeze()
 

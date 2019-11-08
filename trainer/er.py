@@ -106,7 +106,11 @@ class Trainer(GenericTrainer):
         
         self.model.train()
         print("Epochs %d"%epoch)
+        
         tasknum = self.train_data_iterator.dataset.t
+        start = self.train_data_iterator.dataset.start
+        end = self.train_data_iterator.dataset.end
+        
         for data, y, target in tqdm(self.train_data_iterator):
             data, y, target = data.cuda(), y.cuda(), target.cuda()
             
@@ -126,44 +130,12 @@ class Trainer(GenericTrainer):
             
             output = self.model(data)
             
-            start = 0
-            end = (tasknum+1) * self.args.step_size
-#             start = (tasknum) * self.args.step_size
-#             end = (tasknum+1) * self.args.step_size
-            
-            ###############################################################################################################
-            # gradient scale
-            # gradient의 norm을 출력 해봐야한다. 진짜로 norm의 차이가 큰지 확인해봐야함.
-#             if tasknum>0:
-#                 y_onehot[self.args.batch_size:] *= self.args.alpha
-            ###############################################################################################################
-            
             output_log = F.log_softmax(output[:,start:end], dim=1)
             loss_CE = F.kl_div(output_log, y_onehot[:,start:end], reduction='batchmean')
             
+            
+            # 일단 local distillation은 보류.
             loss_KD = 0
-            if tasknum > 0:
-                score = self.model_fixed(data).data
-                loss_KD = torch.zeros(tasknum).cuda()
-                for t in range(tasknum):
-                    
-                    # local distillation
-                    start = (t) * self.args.step_size
-                    end = (t+1) * self.args.step_size
-
-                    soft_target = F.softmax(score[:,start:end] / T, dim=1)
-                    output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-                    loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
-                
-                loss_KD = loss_KD.sum()
-                
-#                 # global distillation
-#                 start = 0
-#                 end = (tasknum) * self.args.step_size
-                
-#                 soft_target = F.softmax(score[:,start:end] / T, dim=1)
-#                 output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-#                 loss_KD = loss_KD + F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
                 
             self.optimizer.zero_grad()
             (loss_KD + loss_CE).backward()
@@ -176,3 +148,28 @@ class Trainer(GenericTrainer):
             param.requires_grad = False
         self.models.append(model)
         print("Total Models %d"%len(self.models))
+
+            ###############################################################################################################
+            # gradient scale
+            # gradient의 norm을 출력 해봐야한다. 진짜로 norm의 차이가 큰지 확인해봐야함.
+#             if tasknum>0:
+#                 y_onehot[self.args.batch_size:] *= self.args.alpha
+            ###############################################################################################################
+
+
+
+
+#             if tasknum > 0:
+#                 score = self.model_fixed(data).data
+#                 loss_KD = torch.zeros(tasknum).cuda()
+#                 for t in range(tasknum):
+                    
+#                     # local distillation
+#                     start = (t) * self.args.step_size
+#                     end = (t+1) * self.args.step_size
+
+#                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
+#                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
+#                     loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
+                
+#                 loss_KD = loss_KD.sum()

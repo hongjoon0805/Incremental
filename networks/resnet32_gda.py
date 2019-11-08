@@ -79,7 +79,7 @@ class CifarResNet(nn.Module):
         self.stage_1 = self._make_layer(block, 16, layer_blocks, 1)
         self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
         self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
-        self.noise_layer = NoiseLayer(64)
+        self.noise_layer = NoiseLayer(64, ratio=ratio)
         self.avgpool = nn.AvgPool2d(8)
         self.fc = nn.Linear(64 * block.expansion, num_classes)
 
@@ -128,7 +128,7 @@ class CifarResNet(nn.Module):
         return x
 
 
-def resnet32(num_classes=10, ratio = 1/512):
+def resnet32(num_classes=100, ratio = 1/2):
     """Constructs a ResNet-32 model for CIFAR-10 (by default)
     Args:
       num_classes (uint): number of classes

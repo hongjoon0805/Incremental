@@ -16,7 +16,11 @@ from torch.autograd import Variable
 
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None):
+    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, base_classes=50):
+        # label shuffle
+        label_shffled = shuffle(np.arange(classes))
+        labels = label_shuffled[labels]
+        
         sort_index = np.argsort(labels)
         if "torch" in str(type(data)):
             data = data.numpy()
@@ -26,14 +30,18 @@ class IncrementalLoader(td.Dataset):
         self.labelsNormal = np.copy(self.labels)
         self.transform = transform
         self.total_classes = classes
+        self.data_per_classes = data.shape[0] // classes
         self.step_size = step_size
+        self.base_classes = base_classes
         self.t=0
-        self.len = data.shape[0] // step_size
+        self.len = self.data_per_classes * base_classes
         self.mem_sz = mem_sz
         self.mode=mode
         self.batch_size = batch_size
-        self.start = self.t * self.len
-        self.end = (self.t + 1) * self.len
+        self.start_idx = 0
+        self.end_idx = self.len
+        self.start = 0
+        self.end = base_classes
         self.exemplar = []
         
         self.transformLabels()
@@ -46,14 +54,17 @@ class IncrementalLoader(td.Dataset):
         
     def task_change(self):
         self.t += 1
-        self.start = self.t * self.len
-        self.end = (self.t + 1) * self.len
+        self.start_idx = self.end_idx 
+        self.end_idx = self.end_idx  + self.step_size * self.data_per_classes
+        self.start = self.end
+        self.end += self.step_size
+        self.len = self.data_par_classes * self.step_size
         
     def update_exemplar(self):
         j = 0
         print(len(self.exemplar))
         print(self.mem_sz)
-        for idx in range(self.start, self.end):
+        for idx in range(self.start_idx, self.end_idx):
             if len(self.exemplar) < self.mem_sz:
                 self.exemplar.append(idx)
             else:
@@ -64,6 +75,7 @@ class IncrementalLoader(td.Dataset):
                     
     
     def sample_exemplar(self):
+#         exemplar_idx = shuffle(np.array(self.exemplar))[:self.batch_size]
         exemplar_idx = shuffle(np.array(self.exemplar))[:self.batch_size]
         
         img_arr = []
@@ -99,7 +111,7 @@ class IncrementalLoader(td.Dataset):
         :return: 
         '''
         if self.mode == 'train':
-            img = self.data[self.start + index]
+            img = self.data[self.start_idx + index]
         else:
             img = self.data[index]
         img = Image.fromarray(img)
@@ -107,6 +119,6 @@ class IncrementalLoader(td.Dataset):
             img = self.transform(img)
 
         if self.mode == 'train':
-            return img, self.labels[self.start + index], self.labelsNormal[self.start + index]
+            return img, self.labels[self.start_idx + index], self.labelsNormal[self.start_idx + index]
         else:
             return img, self.labels[index], self.labelsNormal[index]
