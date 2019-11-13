@@ -16,10 +16,12 @@ from torch.autograd import Variable
 
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, base_classes=50):
-        # label shuffle
-        label_shffled = shuffle(np.arange(classes))
-        labels = label_shuffled[labels]
+    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'coreset'):
+        if shuffle_idx is not None:
+            # label shuffle
+            print("Label shuffled")
+            labels = shuffle_idx[labels]
+            print(shuffle_idx)
         
         sort_index = np.argsort(labels)
         if "torch" in str(type(data)):
@@ -35,6 +37,7 @@ class IncrementalLoader(td.Dataset):
         self.base_classes = base_classes
         self.t=0
         self.len = self.data_per_classes * base_classes
+        self.current_len = self.len
         self.mem_sz = mem_sz
         self.mode=mode
         self.batch_size = batch_size
@@ -42,6 +45,9 @@ class IncrementalLoader(td.Dataset):
         self.end_idx = self.len
         self.start = 0
         self.end = base_classes
+        
+        self.strategy = 'Reservior'
+        self.approach = approach
         self.exemplar = []
         
         self.transformLabels()
@@ -55,27 +61,65 @@ class IncrementalLoader(td.Dataset):
     def task_change(self):
         self.t += 1
         self.start_idx = self.end_idx 
-        self.end_idx = self.end_idx  + self.step_size * self.data_per_classes
+        self.end_idx += self.step_size * self.data_per_classes
         self.start = self.end
         self.end += self.step_size
-        self.len = self.data_par_classes * self.step_size
+        self.len = self.data_per_classes * self.step_size
+        if self.approach == 'coreset':
+            self.len = self.data_per_classes * self.step_size + len(self.exemplar)
         
     def update_exemplar(self):
+        
+        if self.strategy == 'Reservior':
+            self.Reservior()
+        elif self.strategy == 'RingBufferr':
+            self.RingBuffer()
+        elif self.strategy == 'Weighted':
+            self.Weighted()
+
+#         exemplar_per_classes = np.zeros(self.total_classes)
+#         for idx in self.exemplar:
+#             exemplar_per_classes[idx//500] += 1
+#         print(exemplar_per_classes)
+    
+    def Reservior(self):
         j = 0
-        print(len(self.exemplar))
-        print(self.mem_sz)
         for idx in range(self.start_idx, self.end_idx):
             if len(self.exemplar) < self.mem_sz:
                 self.exemplar.append(idx)
             else:
-                i = np.random.randint(self.end+j)
+                i = np.random.randint(self.end_idx+j)
                 if i < self.mem_sz:
                     self.exemplar[i] = idx
             j += 1
-                    
+    
+    def RingBuffer(self):
+        buffer_per_class = self.mem_sz // self.end
+        self.exemplar = []
+        for i in range(self.end):
+            
+            self.exemplar += range(i*self.data_per_classes,i*self.data_per_classes+buffer_per_class)
+    
+    def Weighted(self):
+        start = 0
+        end = self.base_classes
+        weight_sum = 0
+        for t in reversed(range(1,self.t+2)):
+            weight_sum += (end-start)*t
+            start = end
+            end += self.step_size
+        
+        k = self.mem_sz // weight_sum
+        base = self.base_classes
+        weight = self.t+1
+        self.exemplar = []
+        for i in range(self.end):
+            if i> base:
+                base += self.step_size
+                weight = weight-1
+            self.exemplar += range(i*self.data_per_classes, i*self.data_per_classes+weight*k)
     
     def sample_exemplar(self):
-#         exemplar_idx = shuffle(np.array(self.exemplar))[:self.batch_size]
         exemplar_idx = shuffle(np.array(self.exemplar))[:self.batch_size]
         
         img_arr = []
@@ -102,23 +146,34 @@ class IncrementalLoader(td.Dataset):
         if self.mode == 'train':
             return self.len
         else:
-            return self.end
+            return self.end_idx
     
     def __getitem__(self, index):
-        '''
-        Replacing this with a more efficient implemnetation selection; removing c
-        :param index: 
-        :return: 
-        '''
+        
         if self.mode == 'train':
-            img = self.data[self.start_idx + index]
-        else:
-            img = self.data[index]
+            if self.approach == 'coreset' and index >= self.current_len:
+                index = self.exemplar[index - self.current_len]
+            else:
+                index = self.start_idx + index
+                
+        img = self.data[index]
         img = Image.fromarray(img)
         if self.transform is not None:
             img = self.transform(img)
 
-        if self.mode == 'train':
-            return img, self.labels[self.start_idx + index], self.labelsNormal[self.start_idx + index]
-        else:
-            return img, self.labels[index], self.labelsNormal[index]
+        return img, self.labels[index], self.labelsNormal[index]
+        
+#     def __getitem__(self, index):
+        
+#         if self.mode == 'train':
+#             img = self.data[self.start_idx + index]
+#         else:
+#             img = self.data[index]
+#         img = Image.fromarray(img)
+#         if self.transform is not None:
+#             img = self.transform(img)
+
+#         if self.mode == 'train':
+#             return img, self.labels[self.start_idx + index], self.labelsNormal[self.start_idx + index]
+#         else:
+#             return img, self.labels[index], self.labelsNormal[index]

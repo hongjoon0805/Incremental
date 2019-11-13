@@ -15,3 +15,5 @@ class DatasetFactory:
     def get_dataset(name):
         if name == "CIFAR100":
             return data.CIFAR100()
+        elif name == "Imagenet":
+            return data.Imagenet()

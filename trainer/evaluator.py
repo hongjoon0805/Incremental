@@ -136,7 +136,7 @@ class softmax_evaluator():
     def __init__(self):
         pass
 
-    def evaluate(self, model, loader, tasknum, step_size, mode = 'train'):
+    def evaluate(self, model, loader, start, end):
         '''
         :param model: Trained model
         :param loader: Data iterator
@@ -148,13 +148,8 @@ class softmax_evaluator():
         for data, y, target in loader:
             data, y, target = data.cuda(), y.cuda(), target.cuda()
             
-            start = 0
-            if mode == 'train':
-                start = tasknum * step_size
-                target = target%step_size
-            end = (tasknum+1) * step_size
-            
             output = model(data)[:,start:end]
+            target = target % (end - start)
             
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()

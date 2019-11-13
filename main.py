@@ -10,23 +10,23 @@ import experiment as ex
 import networks
 import trainer
 import arguments
+from sklearn.utils import shuffle
 
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 args = arguments.get_args()
 
-log_name = '{}_{}_{}_{}_memsz_{}_alpha_{}_ratio_{:.8f}_beta_{}_lr_{}_out_{}_batch_{}_epoch_{}'.format(args.date,
-                                                                                                      args.dataset,
-                                                                                                      args.trainer,
-                                                                                                      args.seed,
-                                                                                                      args.memory_budget,
-                                                                                                      args.alpha,
-                                                                                                      args.ratio,
-                                                                                                      args.beta,
-                                                                                                      args.lr,
-                                                                                                      args.out_channels,
-                                                                                                      args.batch_size,
-                                                                                                      args.epochs_class)
+log_name = '{}_{}_{}_{}_memsz_{}_base_{}_batch_{}_epoch_{}_{}'.format(
+    args.date,
+    args.dataset,
+    args.trainer,
+    args.seed,
+    args.memory_budget,
+    args.base_classes,
+    args.batch_size,
+    args.epochs_class,
+    args.strategy
+)
 
 
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
@@ -39,6 +39,7 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 
 # Loader used for training data
+shuffle_idx = shuffle(np.arange(dataset.classes), random_state=args.seed)
 train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data.train_data,
                                                       dataset.train_data.train_labels,
                                                       dataset.classes,
@@ -47,6 +48,10 @@ train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data.train_d
                                                       'train',
                                                       args.batch_size,
                                                       transform=dataset.train_transform,
+                                                      shuffle_idx = shuffle_idx,
+                                                      base_classes = args.base_classes,
+                                                      strategy = args.strategy,
+                                                      approach = args.trainer
                                                       )
 
 # Loader for test data.
@@ -57,7 +62,11 @@ test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data.test_data
                                                      args.memory_budget,
                                                      'test',
                                                      args.batch_size,
-                                                     transform=dataset.test_transform
+                                                     transform=dataset.test_transform,
+                                                     shuffle_idx = shuffle_idx,
+                                                     base_classes = args.base_classes,
+                                                     strategy = args.strategy,
+                                                     approach = args.trainer
                                                      )
 
 kwargs = {'num_workers': 1, 'pin_memory': True} 
@@ -71,7 +80,7 @@ test_iterator = torch.utils.data.DataLoader(test_dataset_loader,
                                             batch_size=args.batch_size, shuffle=False, **kwargs)
 
 # Get the required model
-myModel = networks.ModelFactory.get_model(args.dataset, args.ratio, args.trainer, args.out_channels).cuda()
+myModel = networks.ModelFactory.get_model(args.dataset, args.ratio, args.trainer).cuda()
 # myModel = networks.ModelFactory.get_model(args.dataset).cuda()
 
 # Define the optimizer used in the experiment
@@ -85,27 +94,41 @@ myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, da
 
 # Initilize the evaluators used to measure the performance of the system.
 t_classifier = trainer.EvaluatorFactory.get_evaluator("trainedClassifier")
-results_soft = np.zeros(dataset.classes // args.step_size)
+results_soft = []
+results_task_soft = np.zeros((dataset.classes // args.step_size, dataset.classes // args.step_size))
 if args.trainer == 'gda':
     gda_classifier = trainer.EvaluatorFactory.get_evaluator("generativeClassifier")
     results_gda = np.zeros(dataset.classes // args.step_size)
 
 
 # Loop that incrementally adds more and more classes
-for t in range(dataset.classes//args.step_size):
+
+train_start = 0
+train_end = args.base_classes
+test_start = 0
+test_end = args.base_classes
+total_epochs = args.epochs_class
+schedule = np.array(args.schedule)
+
+for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
     # Add new classes to the train, and test iterator
     myTrainer.update_frozen_model()
-    epoch = 0
+    
+    if t==1:
+        total_epochs = args.epochs_class // 2
+        schedule = schedule // 2
+        
 
     # Running epochs_class epochs
-    for epoch in range(0, args.epochs_class):
-        myTrainer.update_lr(epoch)
+    for epoch in range(0, total_epochs):
+        myTrainer.update_lr(epoch, schedule)
         myTrainer.train(epoch)
         # print(my_trainer.threshold)
         if epoch % 5 == (5 - 1):
-            TrainError_softmax = t_classifier.evaluate(myTrainer.model, train_iterator, t, args.step_size, 'train')
-            TestError_softmax = t_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
+            
+            TrainError_softmax = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
+            TestError_softmax = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end)
             print("*********CURRENT EPOCH********** : %d"%epoch)
             print("Train Classifier (Softmax): %0.2f"%TrainError_softmax)
             print("Test Classifier (Softmax): %0.2f"%TestError_softmax)
@@ -128,12 +151,10 @@ for t in range(dataset.classes//args.step_size):
     # Resovior sampling 자체가 잘못되었나? resorvior sampling이 각 class를 uniform하게 가지고 있는지 알아보자.
     
     
-    TestError_softmax = t_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
+    TestError_softmax = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end)
     print("Test Classifier Final(Softmax): %0.2f"%TestError_softmax)
-    results_soft[t] = TestError_softmax
-    np.savetxt('./result_data/'+log_name+'_Soft.txt', results_soft, '%.4f')
-    
-    break
+    results_soft.append(TestError_softmax)
+    np.savetxt('./result_data/'+log_name+'_Soft.txt', np.array(results_soft), '%.4f')
     
     if args.trainer == 'gda':
         gda_classifier.update_moments(myTrainer.model, train_iterator, args.step_size)
@@ -143,6 +164,10 @@ for t in range(dataset.classes//args.step_size):
         np.savetxt('./result_data/'+log_name+'_GDA.txt', results_gda, '%.4f')
     
     myTrainer.setup_training()
+    train_end = train_end + args.step_size
+    test_end = test_end + args.step_size
+    if args.trainer == 'er':
+        train_start = train_end - args.step_size
     torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
 
 

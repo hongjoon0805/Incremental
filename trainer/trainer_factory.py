@@ -13,4 +13,6 @@ class TrainerFactory():
             import trainer.bayes as trainer
         elif args.trainer == 'gda':
             import trainer.GDA as trainer
+        elif args.trainer == 'coreset':
+            import trainer.coreset as trainer
         return trainer.Trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)

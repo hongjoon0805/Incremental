@@ -41,10 +41,6 @@ class GenericTrainer:
         self.model_single = copy.deepcopy(self.model)
         self.optimizer_single = None
 
-        print("Shuffling turned off for debugging")
-        # random.seed(args.seed)
-        # random.shuffle(self.all_classes)
-
 
 class Trainer(GenericTrainer):
     def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):

@@ -104,21 +104,12 @@ class Trainer(GenericTrainer):
         print("Epochs %d"%epoch)
         
         tasknum = self.train_data_iterator.dataset.t
-#         start = self.train_data_iterator.dataset.start
         start = 0
         end = self.train_data_iterator.dataset.end
         
         for data, y, target in tqdm(self.train_data_iterator):
             data, y, target = data.cuda(), y.cuda(), target.cuda()
             
-            if tasknum > 0:
-                data_r, y_r, target_r = self.train_data_iterator.dataset.sample_exemplar()
-                data_r, y_r, target_r = data_r.cuda(), y_r.cuda(), target_r.cuda()
-                
-                data = torch.cat((data,data_r))
-                y = torch.cat((y,y_r))
-                target = torch.cat((target,target_r))
-                
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
             y_onehot.zero_()
@@ -145,28 +136,3 @@ class Trainer(GenericTrainer):
             param.requires_grad = False
         self.models.append(model)
         print("Total Models %d"%len(self.models))
-
-            ###############################################################################################################
-            # gradient scale
-            # gradient의 norm을 출력 해봐야한다. 진짜로 norm의 차이가 큰지 확인해봐야함.
-#             if tasknum>0:
-#                 y_onehot[self.args.batch_size:] *= self.args.alpha
-            ###############################################################################################################
-
-
-
-
-#             if tasknum > 0:
-#                 score = self.model_fixed(data).data
-#                 loss_KD = torch.zeros(tasknum).cuda()
-#                 for t in range(tasknum):
-                    
-#                     # local distillation
-#                     start = (t) * self.args.step_size
-#                     end = (t+1) * self.args.step_size
-
-#                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
-#                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-#                     loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
-                
-#                 loss_KD = loss_KD.sum()

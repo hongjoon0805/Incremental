@@ -47,18 +47,14 @@ class GenericTrainer:
         self.model_single = copy.deepcopy(self.model)
         self.optimizer_single = None
 
-        print("Shuffling turned off for debugging")
-        # random.seed(args.seed)
-        # random.shuffle(self.all_classes)
-
 
 class Trainer(GenericTrainer):
     def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
         super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
 
-    def update_lr(self, epoch):
-        for temp in range(0, len(self.args.schedule)):
-            if self.args.schedule[temp] == epoch:
+    def update_lr(self, epoch, schedule):
+        for temp in range(0, len(schedule)):
+            if schedule[temp] == epoch:
                 for param_group in self.optimizer.param_groups:
                     self.current_lr = param_group['lr']
                     param_group['lr'] = self.current_lr * self.args.gammas[temp]
