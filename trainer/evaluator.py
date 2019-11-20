@@ -110,7 +110,7 @@ class GDA():
             _, features  = model(data, feature_return=True)
             
             # M_distance: NxC(start~end)
-            #wwww features: NxD
+            # features: NxD
             # features - mean: NxC(start~end)xD
             start = 0
             if mode == 'train':
@@ -136,7 +136,7 @@ class softmax_evaluator():
     def __init__(self):
         pass
 
-    def evaluate(self, model, loader, start, end):
+    def evaluate(self, model, loader, start, end, mode='train', step_size=100):
         '''
         :param model: Trained model
         :param loader: Data iterator
@@ -145,13 +145,49 @@ class softmax_evaluator():
         model.eval()
         correct = 0
         tempCounter = 0
+        cp,epp,epn,cn,enn,enp,total = 0,0,0,0,0,0,0
         for data, y, target in loader:
             data, y, target = data.cuda(), y.cuda(), target.cuda()
             
-            output = model(data)[:,start:end]
-            target = target % (end - start)
+            total += data.shape[0]
             
-            pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+            if mode == 'test' and end > step_size:
+                if target[0]<end-step_size: # prev
+                    out = model(data)
+                    pred = out.data.max(1, keepdim=True)[1].cpu().numpy()
+                    
+                    epn += (pred >= end-step_size).sum()
+                    
+                    output = out[:,start:end-step_size]
+                    target = target % (end - start-step_size)
+                    
+                    pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+                    ans = pred.eq(target.data.view_as(pred)).cpu().sum()
+                    correct += ans
+                    cp += ans
+                    epp += (data.shape[0] - ans)
+                    
+                else: # new
+                    out = model(data)
+                    pred = out.data.max(1, keepdim=True)[1].cpu().numpy()
+                    
+                    enp += (pred < end-step_size).sum()
+                    
+                    output = out[:,end-step_size:end]
+                    target = target % (step_size)
+                    
+                    pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+                    ans = pred.eq(target.data.view_as(pred)).cpu().sum()
+                    correct += ans
+                    cn += ans
+                    enn += (data.shape[0] - ans)
+            else:
+                output = model(data)[:,start:end]
+                target = target % (end - start)
+            
+                pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+                correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
+        if mode == 'test' and end > step_size:
+            return 100. * correct / len(loader.dataset), [cp,epp,epn,cn,enn,enp,total]
         return 100. * correct / len(loader.dataset)

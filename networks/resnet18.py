@@ -88,6 +88,7 @@ class ResNet(nn.Module):
                                        dilate=replace_stride_with_dilation[2])
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.binary_fc = nn.Linear(512 * block.expansion, 1)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -130,7 +131,7 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, bce = False):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -143,26 +144,24 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
+        bx = self.binary_fc(x)
         x = self.fc(x)
+        if bce:
+            return bx, x
+        return x
 
-        return F.log_softmax(x, dim=1)
 
-
-def _resnet(arch, block, layers, pretrained, progress, **kwargs):
-    model = ResNet(block, layers, **kwargs)
-    if pretrained:
-        state_dict = load_state_dict_from_url(model_urls[arch],
-                                              progress=progress)
-        model.load_state_dict(state_dict)
+def _resnet(block, layers):
+    model = ResNet(block, layers)
+    
     return model
 
 
-def resnet18(pretrained=False, progress=True, **kwargs):
+def resnet18(num_classees=1000):
     r"""ResNet-18 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
     """
-    return _resnet('resnet18', BasicBlock, [2, 2, 2, 2], pretrained, progress,
-                   **kwargs)
+    return _resnet(BasicBlock, [2, 2, 2, 2])

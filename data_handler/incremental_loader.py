@@ -16,39 +16,49 @@ from torch.autograd import Variable
 
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'coreset'):
+    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, loader = None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'coreset'):
         if shuffle_idx is not None:
             # label shuffle
             print("Label shuffled")
             labels = shuffle_idx[labels]
-            print(shuffle_idx)
         
         sort_index = np.argsort(labels)
-        if "torch" in str(type(data)):
-            data = data.numpy()
         self.data = data[sort_index]
+        
         labels = np.array(labels)
         self.labels = labels[sort_index]
         self.labelsNormal = np.copy(self.labels)
         self.transform = transform
+        self.loader = loader
         self.total_classes = classes
-        self.data_per_classes = data.shape[0] // classes
+        
+        
+        # Imagenet에서는 class shuffle 후 label < current_class 에서 argmin을 찾으면 length 출력 가능하다.
+        
         self.step_size = step_size
         self.base_classes = base_classes
         self.t=0
-        self.len = self.data_per_classes * base_classes
-        self.current_len = self.len
+        
         self.mem_sz = mem_sz
         self.mode=mode
         self.batch_size = batch_size
-        self.start_idx = 0
-        self.end_idx = self.len
+        
         self.start = 0
         self.end = base_classes
         
-        self.strategy = 'Reservior'
+        self.start_idx = 0
+        self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index
+        
+        
+        self.len = self.end_idx - self.start_idx
+        self.current_len = self.len
+        
+        self.strategy = strategy
         self.approach = approach
         self.exemplar = []
+        self.start_point = []
+        for i in range(classes):
+            self.start_point.append(np.argmin(self.labelsNormal<i))
         
         self.transformLabels()
 
@@ -60,28 +70,35 @@ class IncrementalLoader(td.Dataset):
         
     def task_change(self):
         self.t += 1
-        self.start_idx = self.end_idx 
-        self.end_idx += self.step_size * self.data_per_classes
+        
         self.start = self.end
         self.end += self.step_size
-        self.len = self.data_per_classes * self.step_size
+        
+        self.start_idx = np.argmin(self.labelsNormal<self.start) # start data index
+        self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index
+        if self.end_idx == 0:
+            self.end_idx = self.labels.shape[0]
+        
+        self.len = self.end_idx - self.start_idx
+        self.current_len = self.len
+        
         if self.approach == 'coreset':
-            self.len = self.data_per_classes * self.step_size + len(self.exemplar)
+            self.len += len(self.exemplar)
         
     def update_exemplar(self):
         
         if self.strategy == 'Reservior':
             self.Reservior()
-        elif self.strategy == 'RingBufferr':
+        elif self.strategy == 'RingBuffer':
             self.RingBuffer()
         elif self.strategy == 'Weighted':
             self.Weighted()
-
+            
 #         exemplar_per_classes = np.zeros(self.total_classes)
 #         for idx in self.exemplar:
 #             exemplar_per_classes[idx//500] += 1
 #         print(exemplar_per_classes)
-    
+
     def Reservior(self):
         j = 0
         for idx in range(self.start_idx, self.end_idx):
@@ -97,8 +114,8 @@ class IncrementalLoader(td.Dataset):
         buffer_per_class = self.mem_sz // self.end
         self.exemplar = []
         for i in range(self.end):
-            
-            self.exemplar += range(i*self.data_per_classes,i*self.data_per_classes+buffer_per_class)
+            start = self.start_point[i]
+            self.exemplar += range(start,start+buffer_per_class)
     
     def Weighted(self):
         start = 0
@@ -114,10 +131,11 @@ class IncrementalLoader(td.Dataset):
         weight = self.t+1
         self.exemplar = []
         for i in range(self.end):
+            start = self.start_point[i]
             if i> base:
                 base += self.step_size
                 weight = weight-1
-            self.exemplar += range(i*self.data_per_classes, i*self.data_per_classes+weight*k)
+            self.exemplar += range(start, start+weight*k)
     
     def sample_exemplar(self):
         exemplar_idx = shuffle(np.array(self.exemplar))[:self.batch_size]
@@ -128,7 +146,10 @@ class IncrementalLoader(td.Dataset):
         
         for idx in exemplar_idx:
             img = self.data[idx]
-            img = Image.fromarray(img)
+            try:
+                img = Image.fromarray(img)
+            except:
+                img = self.loader(img[0])
             if self.transform is not None:
                 img = self.transform(img)
             img_arr.append(img)
@@ -157,23 +178,72 @@ class IncrementalLoader(td.Dataset):
                 index = self.start_idx + index
                 
         img = self.data[index]
-        img = Image.fromarray(img)
+        try:
+            img = Image.fromarray(img)
+        except:
+            img = self.loader(img[0])
+            
         if self.transform is not None:
             img = self.transform(img)
 
         return img, self.labels[index], self.labelsNormal[index]
+   
+class ResultLoader(td.Dataset):
+    def __init__(self, data, labels, transform=None, loader = None):
         
-#     def __getitem__(self, index):
-        
-#         if self.mode == 'train':
-#             img = self.data[self.start_idx + index]
-#         else:
-#             img = self.data[index]
-#         img = Image.fromarray(img)
-#         if self.transform is not None:
-#             img = self.transform(img)
+        self.data = data
+        self.labels = labels
+        self.labelsNormal = np.copy(self.labels)
+        self.transform=transform
+        self.loader = loader
+        self.transformLabels()
 
-#         if self.mode == 'train':
-#             return img, self.labels[self.start_idx + index], self.labelsNormal[self.start_idx + index]
-#         else:
-#             return img, self.labels[index], self.labelsNormal[index]
+    def transformLabels(self):
+        '''Change labels to one hot coded vectors'''
+        b = np.zeros((self.labels.size, self.labels.max() + 1))
+        b[np.arange(self.labels.size), self.labels] = 1
+        self.labels = b
+        
+    def __len__(self):
+        return self.labels.shape[0]
+    
+    def __getitem__(self, index):
+        
+        img = self.data[index]
+        try:
+            img = Image.fromarray(img)
+        except:
+            img = self.loader(img[0])
+            
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, self.labels[index], self.labelsNormal[index]
+
+def make_ResultLoaders(data, labels, classes, step_size, transform = None, loader = None, shuffle_idx=None, base_classes=50):
+    if shuffle_idx is not None:
+        labels = shuffle_idx[labels]
+    sort_index = np.argsort(labels)
+    data = data[sort_index]
+    labels = np.array(labels)
+    labels = labels[sort_index]
+    
+    start = 0
+    end = base_classes
+    
+    loaders = []
+    
+    while(end <= classes):
+        
+        start_idx = np.argmin(labels<start) # start data index
+        end_idx = np.argmax(labels>(end-1)) # end data index
+        if end_idx == 0:
+            end_idx = data.shape[0]
+                                 
+        
+        loaders.append(ResultLoader(data[start_idx:end_idx], labels[start_idx:end_idx], transform=transform, loader=loader))
+        
+        start = end
+        end += step_size
+    
+    return loaders

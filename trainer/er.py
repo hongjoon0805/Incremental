@@ -12,9 +12,38 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.utils.data as td
+from PIL import Image
 from tqdm import tqdm
 
 import networks
+
+class ExemplarLoader(td.Dataset):
+    def __init__(self, train_dataset):
+        
+        self.data = train_dataset.data
+        self.labels = train_dataset.labels
+        self.labelsNormal = train_dataset.labelsNormal
+        self.exemplar = train_dataset.exemplar
+        self.transform = train_dataset.transform
+        self.loader = train_dataset.loader
+        self.mem_sz = len(self.exemplar)
+
+    def __len__(self):
+        return self.labels.shape[0]
+    
+    def __getitem__(self, index):
+        index = self.exemplar[index % self.mem_sz]
+        img = self.data[index]
+        try:
+            img = Image.fromarray(img)
+        except:
+            img = self.loader(img[0])
+            
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, self.labels[index], self.labelsNormal[index]
 
 class GenericTrainer:
     '''
@@ -65,7 +94,7 @@ class Trainer(GenericTrainer):
         '''
         
 
-    def setup_training(self):
+    def setup_training(self, lr):
         
         self.train_data_iterator.dataset.update_exemplar()
         
@@ -73,9 +102,9 @@ class Trainer(GenericTrainer):
         self.test_data_iterator.dataset.task_change()
         
         for param_group in self.optimizer.param_groups:
-            print("Setting LR to %0.4f"%self.args.lr)
-            param_group['lr'] = self.args.lr
-            self.current_lr = self.args.lr
+            print("Setting LR to %0.4f"%lr)
+            param_group['lr'] = lr
+            self.current_lr = lr
 
     def update_frozen_model(self):
         self.model.eval()
@@ -108,17 +137,42 @@ class Trainer(GenericTrainer):
         start = 0
         end = self.train_data_iterator.dataset.end
         
-        for data, y, target in tqdm(self.train_data_iterator):
-            data, y, target = data.cuda(), y.cuda(), target.cuda()
+        kwargs = {'num_workers': 16, 'pin_memory': True}
+        exemplar_dataset_loaders = ExemplarLoader(self.train_data_iterator.dataset)
+        exemplar_iterator = torch.utils.data.DataLoader(exemplar_dataset_loaders,
+                                                        batch_size=self.args.batch_size, 
+                                                        shuffle=True, drop_last=True, **kwargs)
+        
+        
+        if tasknum > 0:
+            iterator = zip(self.train_data_iterator, exemplar_iterator)
+        else:
+            iterator = self.train_data_iterator
             
+        for samples in tqdm(iterator):
             if tasknum > 0:
-                data_r, y_r, target_r = self.train_data_iterator.dataset.sample_exemplar()
+                curr, prev = samples
+                
+                data, y, target = curr
+                data, y, target = data.cuda(), y.cuda(), target.cuda()
+                
+                size = data.shape[0]
+                mid = end-self.args.step_size
+                
+                data_r, y_r, target_r = prev
                 data_r, y_r, target_r = data_r.cuda(), y_r.cuda(), target_r.cuda()
                 
                 data = torch.cat((data,data_r))
                 y = torch.cat((y,y_r))
                 target = torch.cat((target,target_r))
                 
+            else:
+                data, y, target = samples
+                data, y, target = data.cuda(), y.cuda(), target.cuda()
+            
+                size = data.shape[0]
+                mid = end-self.args.step_size
+            
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
             y_onehot.zero_()
@@ -126,16 +180,23 @@ class Trainer(GenericTrainer):
             y_onehot.scatter_(1, target, 1)
             
             output = self.model(data)
+            output_log = F.log_softmax(output[:,:end], dim=1)
+            loss_CE = F.kl_div(output_log, y_onehot[:,:end], reduction='batchmean')
             
-            output_log = F.log_softmax(output[:,start:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[:,start:end], reduction='batchmean')
+            # prev: 1
+            # new : 0
+            loss_BCE = 0
+            if tasknum > 0:
+                binary_target = torch.zeros(2*size).cuda()
+                binary_target[size:2*size] = 1
+                prev_prob = F.softmax(output[:,:end], dim=1)[:,:mid].sum(dim=1)
+                loss_BCE = nn.BCELoss()(prev_prob, binary_target)
             
-            
-            # 일단 local distillation은 보류.
             loss_KD = 0
-                
+            # 일단 local distillation은 보류.
+
             self.optimizer.zero_grad()
-            (loss_KD + loss_CE).backward()
+            (loss_KD + loss_CE + loss_BCE).backward()
             self.optimizer.step()
 
     def add_model(self):
@@ -153,7 +214,34 @@ class Trainer(GenericTrainer):
 #                 y_onehot[self.args.batch_size:] *= self.args.alpha
             ###############################################################################################################
 
-
+    
+#             if tasknum > 0:
+#                 data_r, y_r, target_r = self.train_data_iterator.dataset.sample_exemplar()
+#                 data_r, y_r, target_r = data_r.cuda(), y_r.cuda(), target_r.cuda()
+                
+#                 data = torch.cat((data,data_r))
+#                 y = torch.cat((y,y_r))
+#                 target = torch.cat((target,target_r))
+            # prev: 0~end
+            # curr: mid~end
+            # 이렇게 하면 prev가 curr로 classify 되는 경우가 사라지지 않을까?
+            
+#             loss_CE_curr = 0
+#             loss_CE_prev = 0
+            
+#             curr = output[:size,mid:end]
+#             curr_log = F.log_softmax(curr, dim=1)
+#             loss_CE_curr = F.kl_div(curr_log, y_onehot[:size,mid:end], reduction='sum')
+            
+            
+#             if tasknum > 0:
+#                 prev = output[size:size*2,start:mid]
+#                 prev_log = F.log_softmax(prev, dim=1)
+#                 loss_CE_prev = F.kl_div(prev_log, y_onehot[size:size*2,start:mid], reduction='sum')
+                
+#                 loss_CE = (loss_CE_curr + loss_CE_prev) / (2*size)
+#             else:
+#                 loss_CE = loss_CE_curr / size
 
 
 #             if tasknum > 0:

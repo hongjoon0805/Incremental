@@ -106,7 +106,7 @@ class CifarResNet(nn.Module):
         return x
 
 
-def resnet32(num_classes=10):
+def resnet32(num_classes=100):
     """Constructs a ResNet-32 model for CIFAR-10 (by default)
     Args:
       num_classes (uint): number of classes

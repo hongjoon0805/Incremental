@@ -65,7 +65,7 @@ class Trainer(GenericTrainer):
         '''
         
 
-    def setup_training(self):
+    def setup_training(self, lr):
         
         self.train_data_iterator.dataset.update_exemplar()
         
@@ -73,9 +73,9 @@ class Trainer(GenericTrainer):
         self.test_data_iterator.dataset.task_change()
         
         for param_group in self.optimizer.param_groups:
-            print("Setting LR to %0.4f"%self.args.lr)
-            param_group['lr'] = self.args.lr
-            self.current_lr = self.args.lr
+            print("Setting LR to %0.4f"%lr)
+            param_group['lr'] = lr
+            self.current_lr = lr
 
     def update_frozen_model(self):
         self.model.eval()
@@ -118,13 +118,13 @@ class Trainer(GenericTrainer):
             
             output = self.model(data)
             
-            output_log = F.log_softmax(output[:,start:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[:,start:end], reduction='batchmean')
+            output_log = F.log_softmax(output[:,:end], dim=1)
+            loss_CE = F.kl_div(output_log, y_onehot[:,:end], reduction='batchmean')
             
             
             # 일단 local distillation은 보류.
             loss_KD = 0
-                
+            
             self.optimizer.zero_grad()
             (loss_KD + loss_CE).backward()
             self.optimizer.step()
