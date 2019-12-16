@@ -5,9 +5,11 @@ def get_args():
     parser = argparse.ArgumentParser(description='iCarl2.0')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 64)')
+    parser.add_argument('--replay-batch-size', type=int, default=128, metavar='N',
+                        help='input batch size for training (default: 64)')
     parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
-                        help='learning rate (default: 2.0). Note that lr is decayed by args.gamma parameter args.schedule ')
-    parser.add_argument('--alpha', type=float, default=10, help='KD convex combination.')
+                        help='learning rate (default: 0.1. Note that lr is decayed by args.gamma parameter args.schedule ')
+    parser.add_argument('--alpha', type=float, default=1, help='KD convex combination.')
     parser.add_argument('--ratio', type=float, default=1/512, help='variance ratio')
     parser.add_argument('--beta', type=float, default=1e-4, help='beta')
     parser.add_argument('--schedule', type=int, nargs='+', default=[40,80],
@@ -28,6 +30,11 @@ def get_args():
     parser.add_argument('--sample', type=int, default=10, help='Number of samples in BNN')
     parser.add_argument('--factor', type=int, default=4, help='Number of samples in BNN')
     parser.add_argument('--date', type=str, default='', help='(default=%(default)s)')
+    parser.add_argument('--bin-sigmoid', action='store_true', default=False, help='Binary classification using sigmoid')
+    parser.add_argument('--bin-softmax', action='store_true', default=False, help='Binary classification usign softmax')
+    parser.add_argument('--prev-new', action='store_true', default=False, help='Use Prev/New head')
+    parser.add_argument('--lr-change', action='store_true', default=False, help='Use lr change')
+    parser.add_argument('--uniform-penalty', action='store_true', default=False, help='Use uniform penalty')
     parser.add_argument('--dataset', default='', type=str, required=True,
                         choices=['CIFAR100', 
                                  'Imagenet'], 
@@ -37,7 +44,8 @@ def get_args():
                                  'er', 
                                  'bayes',
                                  'gda',
-                                 'coreset'], 
+                                 'coreset',
+                                 'ood'], 
                         help='(default=%(default)s)')
     parser.add_argument('--strategy', default='', type=str, required=True,
                         choices=['Reservior', 

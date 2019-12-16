@@ -15,4 +15,6 @@ class TrainerFactory():
             import trainer.GDA as trainer
         elif args.trainer == 'coreset':
             import trainer.coreset as trainer
+        elif args.trainer == 'ood':
+            import trainer.ood as trainer
         return trainer.Trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)

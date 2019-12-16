@@ -12,6 +12,7 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 import torch.utils.data as td
 from PIL import Image
 from tqdm import tqdm
@@ -87,19 +88,12 @@ class Trainer(GenericTrainer):
                     self.current_lr *= self.args.gammas[temp]
 
     def increment_classes(self):
-        '''
-        Add classes starting from class_group to class_group + step_size 
-        :param class_group: 
-        :return: N/A. Only has side-affects 
-        '''
-        
-
-    def setup_training(self, lr):
         
         self.train_data_iterator.dataset.update_exemplar()
-        
         self.train_data_iterator.dataset.task_change()
         self.test_data_iterator.dataset.task_change()
+        
+    def setup_training(self, lr):
         
         for param_group in self.optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
@@ -136,11 +130,11 @@ class Trainer(GenericTrainer):
 #         start = self.train_data_iterator.dataset.start
         start = 0
         end = self.train_data_iterator.dataset.end
-        
-        kwargs = {'num_workers': 16, 'pin_memory': True}
+        mid = end-self.args.step_size
+        kwargs = {'num_workers': 32, 'pin_memory': True}
         exemplar_dataset_loaders = ExemplarLoader(self.train_data_iterator.dataset)
         exemplar_iterator = torch.utils.data.DataLoader(exemplar_dataset_loaders,
-                                                        batch_size=self.args.batch_size, 
+                                                        batch_size=self.args.replay_batch_size, 
                                                         shuffle=True, drop_last=True, **kwargs)
         
         
@@ -156,11 +150,12 @@ class Trainer(GenericTrainer):
                 data, y, target = curr
                 data, y, target = data.cuda(), y.cuda(), target.cuda()
                 
-                size = data.shape[0]
-                mid = end-self.args.step_size
+                batch_size = data.shape[0]
                 
                 data_r, y_r, target_r = prev
                 data_r, y_r, target_r = data_r.cuda(), y_r.cuda(), target_r.cuda()
+                
+                replay_size = data_r.shape[0]
                 
                 data = torch.cat((data,data_r))
                 y = torch.cat((y,y_r))
@@ -170,8 +165,7 @@ class Trainer(GenericTrainer):
                 data, y, target = samples
                 data, y, target = data.cuda(), y.cuda(), target.cuda()
             
-                size = data.shape[0]
-                mid = end-self.args.step_size
+                batch_size = data.shape[0]
             
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
@@ -179,18 +173,60 @@ class Trainer(GenericTrainer):
             target.unsqueeze_(1)
             y_onehot.scatter_(1, target, 1)
             
-            output = self.model(data)
-            output_log = F.log_softmax(output[:,:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[:,:end], reduction='batchmean')
+            uniform = torch.ones_like(y_onehot)
             
+            output, bin_out = self.model(data, bc=True)
+            
+            if self.args.prev_new:
+                loss_CE_curr = 0
+                loss_CE_prev = 0
+
+                curr = output[:batch_size,mid:end]
+                curr_log = F.log_softmax(curr, dim=1)
+                loss_CE_curr = F.kl_div(curr_log, y_onehot[:batch_size,mid:end], reduction='sum')
+
+
+                if tasknum > 0:
+                    prev = output[batch_size:batch_size+replay_size,start:mid]
+                    prev_log = F.log_softmax(prev, dim=1)
+                    loss_CE_prev = F.kl_div(prev_log, y_onehot[batch_size:batch_size+replay_size,start:mid], reduction='sum')
+
+                    loss_CE = (loss_CE_curr + loss_CE_prev*self.args.alpha) / (batch_size + replay_size)
+                    
+                    if self.args.uniform_penalty:
+#                         curr_uni = output[:batch_size,start:mid]
+#                         curr_uni_log = F.log_softmax(curr_uni, dim=1)
+#                         loss_uni_curr = F.kl_div(curr_uni_log, uniform[:batch_size,start:mid] / (mid-start),
+#                                                  reduction='sum')
+                        
+                        prev_uni = output[batch_size:batch_size+replay_size,mid:end]
+                        prev_uni_log = F.log_softmax(prev_uni, dim=1)
+                        loss_uni_prev = F.kl_div(prev_uni_log, uniform[batch_size:batch_size+replay_size,mid:end] / (end-mid),
+                                                 reduction='sum')
+#                         loss_CE = loss_CE + (loss_uni_curr + loss_uni_prev) / (batch_size + replay_size)
+                        loss_CE = loss_CE + (loss_uni_prev) / (replay_size)
+                    
+                else:
+                    loss_CE = loss_CE_curr / batch_size
+            else:
+                output_log = F.log_softmax(output[:,:end], dim=1)
+                loss_CE = F.kl_div(output_log, y_onehot[:,:end])
+
             # prev: 1
             # new : 0
             loss_BCE = 0
             if tasknum > 0:
-                binary_target = torch.zeros(2*size).cuda()
-                binary_target[size:2*size] = 1
-                prev_prob = F.softmax(output[:,:end], dim=1)[:,:mid].sum(dim=1)
-                loss_BCE = nn.BCELoss()(prev_prob, binary_target)
+                binary_target = torch.zeros(batch_size + replay_size).cuda()
+                binary_target[batch_size:batch_size+replay_size] = 1
+                # Binary Classification using sigmoid output
+                if self.args.bin_sigmoid:
+                    prev_prob = F.sigmoid(bin_out).squeeze()
+                    loss_BCE = F.binary_cross_entropy(prev_prob, binary_target)
+
+                # Binary Classification using softmax output
+                elif self.args.bin_softmax:
+                    prev_prob = F.softmax(output[:,:end], dim=1)[:,:mid].sum(dim=1)
+                    loss_BCE = F.binary_crosse_entropy(prev_prob, binary_target)
             
             loss_KD = 0
             # 일단 local distillation은 보류.

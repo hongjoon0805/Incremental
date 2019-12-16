@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torchnet.meter import confusionmeter
 from numpy.linalg import inv
+from sklearn.metrics import roc_auc_score
 
 logger = logging.getLogger('iCARL')
 
@@ -144,50 +145,164 @@ class softmax_evaluator():
         '''
         model.eval()
         correct = 0
-        tempCounter = 0
-        cp,epp,epn,cn,enn,enp,total = 0,0,0,0,0,0,0
+        correct_5 = 0
+        total = 0
+        self.start = start
+        self.end = end
+        self.step_size = step_size
+        self.stat = {}
+        self.correct = {}
+        self.correct_5 = {}
+        self.correct['bin'] = 0
+        self.correct_5['bin'] = 0
+        self.correct['cheat'] = 0
+        self.correct_5['cheat'] = 0
+        head_arr = ['all', 'prev_new', 'task']
+        for head in head_arr:
+            # cp, epp, epn, cn, enn, enp, total
+            self.stat[head] = [0,0,0,0,0,0,0]
+            self.correct[head] = 0
+            self.correct_5[head] = 0
+        
+        
+        self.bin_target_arr = []
+        self.bin_prob_arr = []
         for data, y, target in loader:
             data, y, target = data.cuda(), y.cuda(), target.cuda()
             
+            self.batch_size = data.shape[0]
             total += data.shape[0]
             
             if mode == 'test' and end > step_size:
+#                 bin_target = target.data.cpu().numpy() < (end-step_size)
+                bin_target = target.data.cpu().numpy() >= (end-step_size)
+
+                out, bin_out = model(data, bc=True)
+                
+                bin_out = F.softmax(out[:,end-step_size:end],dim=1).data.max(1, keepdim=True)[0].squeeze()
+                
+                self.bin_cnt(bin_out, bin_target)
+
+                self.make_pred(out)
+                
                 if target[0]<end-step_size: # prev
-                    out = model(data)
-                    pred = out.data.max(1, keepdim=True)[1].cpu().numpy()
                     
-                    epn += (pred >= end-step_size).sum()
+                    self.cnt_stat(target, 'prev', 'all')
+                    self.cnt_stat(target, 'prev', 'prev_new')
+                    self.cnt_stat(target, 'prev', 'task')
                     
                     output = out[:,start:end-step_size]
                     target = target % (end - start-step_size)
                     
                     pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
                     ans = pred.eq(target.data.view_as(pred)).cpu().sum()
-                    correct += ans
-                    cp += ans
-                    epp += (data.shape[0] - ans)
+                    self.correct['cheat'] += ans
+                    
+                    pred_5 = torch.topk(output, 5, dim=1)[1]
+                    ans = pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).cpu().sum()
+                    self.correct_5['cheat'] += ans
                     
                 else: # new
-                    out = model(data)
-                    pred = out.data.max(1, keepdim=True)[1].cpu().numpy()
                     
-                    enp += (pred < end-step_size).sum()
+                    self.cnt_stat(target, 'new', 'all')
+                    self.cnt_stat(target, 'new', 'prev_new')
+                    self.cnt_stat(target, 'new', 'task')
                     
                     output = out[:,end-step_size:end]
                     target = target % (step_size)
                     
                     pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
                     ans = pred.eq(target.data.view_as(pred)).cpu().sum()
-                    correct += ans
-                    cn += ans
-                    enn += (data.shape[0] - ans)
+                    self.correct['cheat'] += ans
+                    
+                    pred_5 = torch.topk(output, 5, dim=1)[1]
+                    ans = pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).cpu().sum()
+                    self.correct_5['cheat'] += ans
             else:
                 output = model(data)[:,start:end]
                 target = target % (end - start)
             
                 pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
                 correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+                
+                pred_5 = torch.topk(output, 5, dim=1)[1]
+                correct_5 += pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).cpu().sum()
 
         if mode == 'test' and end > step_size:
-            return 100. * correct / len(loader.dataset), [cp,epp,epn,cn,enn,enp,total]
-        return 100. * correct / len(loader.dataset)
+            bin_target = np.hstack(self.bin_target_arr)
+            bin_prob = np.hstack(self.bin_prob_arr)
+            auroc = roc_auc_score(bin_target, bin_prob)
+        
+        if end > step_size and mode == 'test':
+            for head in ['all','prev_new','task','cheat','bin']:
+                self.correct[head] = 100. * self.correct[head] / len(loader.dataset)
+                self.correct_5[head] = 100. * self.correct_5[head] / len(loader.dataset)
+            self.stat['all'][6] = self.stat['prev_new'][6] = self.stat['task'][6] = total
+            return self.correct, self.correct_5, self.stat, auroc
+
+        return 100. * correct / len(loader.dataset), 100. * correct_5 / len(loader.dataset), 
+    
+    def bin_cnt(self, bin_out, bin_target):
+#         bin_prob = F.sigmoid(bin_out).squeeze()
+        bin_prob = bin_out.data.cpu().numpy()
+    
+        bin_pred = bin_prob > 0.5
+
+        self.bin_target_arr.append(bin_target)
+        self.bin_prob_arr.append(bin_prob)
+
+        self.correct['bin'] += (bin_pred == bin_target).sum()
+        return
+    
+    def make_pred(self, out):
+        start, end, step_size = self.start, self.end, self.step_size
+        self.pred = {}
+        self.pred_5 = {}
+        self.pred['all'] = out.data.max(1, keepdim=True)[1]
+        self.pred_5['all'] = torch.topk(out, 5, dim=1)[1]
+        
+        prev_out = out[:,start:end-step_size]
+        curr_out = out[:,end-step_size:end]
+
+        prev_soft = F.softmax(prev_out, dim=1)
+        curr_soft = F.softmax(curr_out, dim=1)
+
+        output = torch.cat((prev_soft, curr_soft), dim=1)
+
+        self.pred['prev_new'] = output.data.max(1, keepdim=True)[1]
+        self.pred_5['prev_new'] = torch.topk(output, 5, dim=1)[1]
+        
+        soft_arr = []
+        for t in range(start,end,step_size):
+            temp_out = out[:,t:t+step_size]
+            temp_soft = F.softmax(temp_out, dim=1)
+            soft_arr += [temp_soft]
+        
+        output = torch.cat(soft_arr, dim=1)
+        
+        self.pred['task'] = output.data.max(1, keepdim=True)[1]
+        self.pred_5['task'] = torch.topk(output, 5, dim=1)[1]
+        return
+    
+    def cnt_stat(self, target, mode, head):
+        start, end, step_size = self.start, self.end, self.step_size
+        pred = self.pred[head]
+        pred_5 = self.pred_5[head]
+        self.correct[head] += pred.eq(target.data.view_as(pred)).cpu().sum()
+        self.correct_5[head] += pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).cpu().sum()
+        
+        if mode == 'prev':
+            cp_ = pred.eq(target.data.view_as(pred)).cpu().sum()
+            epn_ = (pred.cpu().numpy() >= end-step_size).sum()
+            epp_ = (self.batch_size-(cp_ + epn_))
+            self.stat[head][0] += cp_
+            self.stat[head][1] += epp_
+            self.stat[head][2] += epn_
+        else:
+            cn_ = pred.eq(target.data.view_as(pred)).cpu().sum()
+            enp_ = (pred.cpu().numpy() < end-step_size).sum()
+            enn_ = (self.batch_size-(cn_ + enp_))
+            self.stat[head][3] += cn_
+            self.stat[head][4] += enn_
+            self.stat[head][5] += enp_
+        return

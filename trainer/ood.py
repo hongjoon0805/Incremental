@@ -12,9 +12,39 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
+import torch.utils.data as td
+from PIL import Image
 from tqdm import tqdm
 
 import networks
+
+class ExemplarLoader(td.Dataset):
+    def __init__(self, train_dataset):
+        
+        self.data = train_dataset.data
+        self.labels = train_dataset.labels
+        self.labelsNormal = train_dataset.labelsNormal
+        self.exemplar = train_dataset.exemplar
+        self.transform = train_dataset.transform
+        self.loader = train_dataset.loader
+        self.mem_sz = len(self.exemplar)
+
+    def __len__(self):
+        return self.labels.shape[0]
+    
+    def __getitem__(self, index):
+        index = self.exemplar[index % self.mem_sz]
+        img = self.data[index]
+        try:
+            img = Image.fromarray(img)
+        except:
+            img = self.loader(img[0])
+            
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, self.labels[index], self.labelsNormal[index]
 
 class GenericTrainer:
     '''
@@ -62,7 +92,7 @@ class Trainer(GenericTrainer):
         self.train_data_iterator.dataset.update_exemplar()
         self.train_data_iterator.dataset.task_change()
         self.test_data_iterator.dataset.task_change()
-
+        
     def setup_training(self, lr):
         
         for param_group in self.optimizer.param_groups:
@@ -97,16 +127,41 @@ class Trainer(GenericTrainer):
         print("Epochs %d"%epoch)
         
         tasknum = self.train_data_iterator.dataset.t
-        start = 0
+        start = self.train_data_iterator.dataset.start
         end = self.train_data_iterator.dataset.end
-        mid = end-self.args.step_size
+        kwargs = {'num_workers': 32, 'pin_memory': True}
+        exemplar_dataset_loaders = ExemplarLoader(self.train_data_iterator.dataset)
+        exemplar_iterator = torch.utils.data.DataLoader(exemplar_dataset_loaders,
+                                                        batch_size=self.args.replay_batch_size, 
+                                                        shuffle=True, drop_last=True, **kwargs)
         
-        for data, y, target in tqdm(self.train_data_iterator):
-            data, y, target = data.cuda(), y.cuda(), target.cuda()
+        
+        if tasknum > 0:
+            iterator = zip(self.train_data_iterator, exemplar_iterator)
+        else:
+            iterator = self.train_data_iterator
             
-            oldClassesIndices = (target < (end -self.args.step_size)).int()
-            old_classes_indices = torch.squeeze(torch.nonzero((oldClassesIndices > 0)).long())
-            new_classes_indices = torch.squeeze(torch.nonzero((oldClassesIndices == 0)).long())
+        for samples in tqdm(iterator):
+            if tasknum > 0:
+                curr, prev = samples
+                
+                data, y, target = curr
+                data, y, target = data.cuda(), y.cuda(), target.cuda()
+                
+                batch_size = data.shape[0]
+                
+                data_r, _, _ = prev
+                data_r = data_r.cuda()
+                
+                replay_size = data_r.shape[0]
+                
+                data = torch.cat((data,data_r))
+                
+            else:
+                data, y, target = samples
+                data, y, target = data.cuda(), y.cuda(), target.cuda()
+            
+                batch_size = data.shape[0]
             
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
@@ -118,45 +173,17 @@ class Trainer(GenericTrainer):
             
             output = self.model(data)
             
-            if self.args.prev_new:
-                loss_CE_curr = 0
-                loss_CE_prev = 0
-
-                curr = output[new_classes_indices,mid:end]
-                curr_log = F.log_softmax(curr, dim=1)
-                loss_CE_curr = F.kl_div(curr_log, y_onehot[new_classes_indices,mid:end], reduction='sum')
-
-
-                if tasknum > 0:
-                    prev = output[old_classes_indices,start:mid]
-                    prev_log = F.log_softmax(prev, dim=1)
-                    loss_CE_prev = F.kl_div(prev_log, y_onehot[old_classes_indices,start:mid], reduction='sum')
-                    
-                    loss_CE = (loss_CE_curr + loss_CE_prev*self.args.alpha) / (data.shape[0])
-                    
-                    if self.args.uniform_penalty:
-                        curr_uni = output[new_classes_indices,start:mid]
-                        curr_uni_log = F.log_softmax(curr_uni, dim=1)
-                        loss_uni_curr = F.kl_div(curr_uni_log, uniform[new_classes_indices,start:mid] / (mid-start),
-                                                 reduction='sum')
-                        
-                        prev_uni = output[old_classes_indices,mid:end]
-                        prev_uni_log = F.log_softmax(prev_uni, dim=1)
-                        loss_uni_prev = F.kl_div(prev_uni_log, uniform[old_classes_indices,mid:end] / (end-mid),
-                                                 reduction='sum')
-                        loss_CE = loss_CE + (loss_uni_curr + loss_uni_prev) / (data.shape[0])
-                        
-                else:
-                    loss_CE = loss_CE_curr / data.shape[0]
-            else:
-                output_log = F.log_softmax(output[:,:end], dim=1)
-                loss_CE = F.kl_div(output_log, y_onehot[:,:end])
+            output_log = F.log_softmax(output[:batch_size,start:end], dim=1)
+            loss_CE = F.kl_div(output_log, y_onehot[:batch_size,start:end])
             
-            # 일단 local distillation은 보류.
-            loss_KD = 0
+            if tasknum > 0:
+                prev_uni = output[batch_size:batch_size+replay_size,start:end]
+                prev_uni_log = F.log_softmax(prev_uni, dim=1)
+                loss_uni_prev = F.kl_div(prev_uni_log, uniform[:replay_size,start:end] / (end-start))
+                loss_CE = loss_CE + (loss_uni_prev) / (replay_size)
             
             self.optimizer.zero_grad()
-            (loss_KD + loss_CE).backward()
+            (loss_CE).backward()
             self.optimizer.step()
 
     def add_model(self):

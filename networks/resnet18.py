@@ -131,7 +131,7 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x, bce = False):
+    def forward(self, x, bc = False):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -146,8 +146,8 @@ class ResNet(nn.Module):
         x = torch.flatten(x, 1)
         bx = self.binary_fc(x)
         x = self.fc(x)
-        if bce:
-            return bx, x
+        if bc:
+            return x, bx
         return x
 
 
