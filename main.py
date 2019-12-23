@@ -12,6 +12,7 @@ import networks
 import trainer
 import arguments
 from sklearn.utils import shuffle
+from sklearn.metrics import roc_auc_score
 
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
@@ -36,6 +37,8 @@ if args.prev_new:
     log_name += '_prev_new'
 if args.uniform_penalty:
     log_name += '_uniform_penalty'
+if args.rand_init:
+    log_name += '_rand_init'
 if args.lr_change:
     log_name += '_lr_change'
 if args.bin_sigmoid:
@@ -128,6 +131,8 @@ myModel = torch.nn.DataParallel(myModel).cuda()
 # Define the optimizer used in the experiment
 optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
                             weight_decay=args.decay, nesterov=True)
+# optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
+#                             weight_decay=args.decay)
 # if args.trainer == 'bayes':
 #     optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum, nesterov=True)
 
@@ -161,6 +166,8 @@ for head in ['all', 'prev_new', 'task', 'cheat']:
     results[head]['correct_5'] = []
     results[head]['stat'] = []
     
+results['bin_target'] = []
+results['bin_prob'] = []
 results['sigmoid'] = []
 results['auroc'] = []
 results['task_soft_1'] = np.zeros((tasknum, tasknum))
@@ -176,10 +183,15 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     if t==1:
         total_epochs = args.epochs_class // args.factor
         schedule = schedule // args.factor
-
+    if t==5:
+        break
     
+    
+    if args.trainer == 'ood' and args.rand_init:
+        myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
+    
     # Running epochs_class epochs
     for epoch in range(0, total_epochs):
         myTrainer.update_lr(epoch, schedule)
@@ -194,8 +206,11 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
                 print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
                 print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
                 
-                correct, correct_5, stat, auroc = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end, 
-                                                             mode='test', step_size=args.step_size)
+                correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
+                                                                                       test_start, test_end, 
+                                                                                       mode='test', step_size=args.step_size)
+                
+                auroc = roc_auc_score(bin_target, bin_prob)
                 
                 print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
                 print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
@@ -246,9 +261,12 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
         print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
 
-        correct, correct_5, stat, auroc = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end, 
-                                                             mode='test', step_size=args.step_size)
+        correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
+                                                                                       test_start, test_end, 
+                                                                                       mode='test', step_size=args.step_size)
                 
+        auroc = roc_auc_score(bin_target, bin_prob)
+        
         print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
         print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
         print("Test Classifier top-1 (Softmax, prev_new): %0.2f"%correct['prev_new'])
@@ -278,6 +296,9 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         results['cheat']['correct_5'].append(correct_5['cheat'])
         results['sigmoid'].append(correct['bin'])
         results['auroc'].append(auroc)
+        results['bin_target'].append(bin_target)
+        results['bin_prob'].append(bin_prob)
+        
     else:
         train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
         print("Train Classifier top-1 Final(Softmax): %0.2f"%train_1)

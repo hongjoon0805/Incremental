@@ -35,6 +35,7 @@ def get_args():
     parser.add_argument('--prev-new', action='store_true', default=False, help='Use Prev/New head')
     parser.add_argument('--lr-change', action='store_true', default=False, help='Use lr change')
     parser.add_argument('--uniform-penalty', action='store_true', default=False, help='Use uniform penalty')
+    parser.add_argument('--rand-init', action='store_true', default=False, help='Use random init')
     parser.add_argument('--dataset', default='', type=str, required=True,
                         choices=['CIFAR100', 
                                  'Imagenet'], 

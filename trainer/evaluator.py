@@ -231,14 +231,13 @@ class softmax_evaluator():
         if mode == 'test' and end > step_size:
             bin_target = np.hstack(self.bin_target_arr)
             bin_prob = np.hstack(self.bin_prob_arr)
-            auroc = roc_auc_score(bin_target, bin_prob)
+#             auroc = roc_auc_score(bin_target, bin_prob)
         
-        if end > step_size and mode == 'test':
             for head in ['all','prev_new','task','cheat','bin']:
                 self.correct[head] = 100. * self.correct[head] / len(loader.dataset)
                 self.correct_5[head] = 100. * self.correct_5[head] / len(loader.dataset)
             self.stat['all'][6] = self.stat['prev_new'][6] = self.stat['task'][6] = total
-            return self.correct, self.correct_5, self.stat, auroc
+            return self.correct, self.correct_5, self.stat, bin_target, bin_prob
 
         return 100. * correct / len(loader.dataset), 100. * correct_5 / len(loader.dataset), 
     

@@ -174,13 +174,16 @@ class Trainer(GenericTrainer):
             output = self.model(data)
             
             output_log = F.log_softmax(output[:batch_size,start:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[:batch_size,start:end])
+            loss_CE = F.kl_div(output_log, y_onehot[:batch_size,start:end], reduction = 'batchmean')
+            loss_CE += F.kl_div(output_log, uniform[:batch_size,start:end] / (end-start), 
+                               reduction = 'batchmean') * self.args.alpha
             
             if tasknum > 0:
                 prev_uni = output[batch_size:batch_size+replay_size,start:end]
                 prev_uni_log = F.log_softmax(prev_uni, dim=1)
-                loss_uni_prev = F.kl_div(prev_uni_log, uniform[:replay_size,start:end] / (end-start))
-                loss_CE = loss_CE + (loss_uni_prev) / (replay_size)
+                loss_uni_prev = F.kl_div(prev_uni_log, uniform[:replay_size,start:end] / (end-start), 
+                                         reduction = 'batchmean') * self.args.alpha
+                loss_CE += loss_uni_prev
             
             self.optimizer.zero_grad()
             (loss_CE).backward()

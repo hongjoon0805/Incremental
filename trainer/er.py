@@ -210,7 +210,7 @@ class Trainer(GenericTrainer):
                     loss_CE = loss_CE_curr / batch_size
             else:
                 output_log = F.log_softmax(output[:,:end], dim=1)
-                loss_CE = F.kl_div(output_log, y_onehot[:,:end])
+                loss_CE = F.kl_div(output_log, y_onehot[:,:end], reduction = 'batchmean')
 
             # prev: 1
             # new : 0
@@ -242,55 +242,3 @@ class Trainer(GenericTrainer):
             param.requires_grad = False
         self.models.append(model)
         print("Total Models %d"%len(self.models))
-
-            ###############################################################################################################
-            # gradient scale
-            # gradient의 norm을 출력 해봐야한다. 진짜로 norm의 차이가 큰지 확인해봐야함.
-#             if tasknum>0:
-#                 y_onehot[self.args.batch_size:] *= self.args.alpha
-            ###############################################################################################################
-
-    
-#             if tasknum > 0:
-#                 data_r, y_r, target_r = self.train_data_iterator.dataset.sample_exemplar()
-#                 data_r, y_r, target_r = data_r.cuda(), y_r.cuda(), target_r.cuda()
-                
-#                 data = torch.cat((data,data_r))
-#                 y = torch.cat((y,y_r))
-#                 target = torch.cat((target,target_r))
-            # prev: 0~end
-            # curr: mid~end
-            # 이렇게 하면 prev가 curr로 classify 되는 경우가 사라지지 않을까?
-            
-#             loss_CE_curr = 0
-#             loss_CE_prev = 0
-            
-#             curr = output[:size,mid:end]
-#             curr_log = F.log_softmax(curr, dim=1)
-#             loss_CE_curr = F.kl_div(curr_log, y_onehot[:size,mid:end], reduction='sum')
-            
-            
-#             if tasknum > 0:
-#                 prev = output[size:size*2,start:mid]
-#                 prev_log = F.log_softmax(prev, dim=1)
-#                 loss_CE_prev = F.kl_div(prev_log, y_onehot[size:size*2,start:mid], reduction='sum')
-                
-#                 loss_CE = (loss_CE_curr + loss_CE_prev) / (2*size)
-#             else:
-#                 loss_CE = loss_CE_curr / size
-
-
-#             if tasknum > 0:
-#                 score = self.model_fixed(data).data
-#                 loss_KD = torch.zeros(tasknum).cuda()
-#                 for t in range(tasknum):
-                    
-#                     # local distillation
-#                     start = (t) * self.args.step_size
-#                     end = (t+1) * self.args.step_size
-
-#                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
-#                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-#                     loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
-                
-#                 loss_KD = loss_KD.sum()
