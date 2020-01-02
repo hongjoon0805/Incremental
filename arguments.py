@@ -5,13 +5,13 @@ def get_args():
     parser = argparse.ArgumentParser(description='iCarl2.0')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 64)')
-    parser.add_argument('--replay-batch-size', type=int, default=128, metavar='N',
+    parser.add_argument('--replay-batch-size', type=int, default=32, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                         help='learning rate (default: 0.1. Note that lr is decayed by args.gamma parameter args.schedule ')
-    parser.add_argument('--alpha', type=float, default=1, help='KD convex combination.')
+    parser.add_argument('--alpha', type=float, default=1, help='KD convex combination or CI strength')
     parser.add_argument('--ratio', type=float, default=1/512, help='variance ratio')
-    parser.add_argument('--beta', type=float, default=1e-4, help='beta')
+    parser.add_argument('--beta', type=float, default=1e-4, help='GCE strength')
     parser.add_argument('--schedule', type=int, nargs='+', default=[40,80],
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--gammas', type=float, nargs='+', default=[0.1, 0.1],
@@ -35,10 +35,15 @@ def get_args():
     parser.add_argument('--prev-new', action='store_true', default=False, help='Use Prev/New head')
     parser.add_argument('--lr-change', action='store_true', default=False, help='Use lr change')
     parser.add_argument('--uniform-penalty', action='store_true', default=False, help='Use uniform penalty')
+    parser.add_argument('--CI', action='store_true', default=False, help='Use Confidence Integrated loss')
     parser.add_argument('--rand-init', action='store_true', default=False, help='Use random init')
     parser.add_argument('--dataset', default='', type=str, required=True,
                         choices=['CIFAR100', 
                                  'Imagenet'], 
+                        help='(default=%(default)s)')
+    parser.add_argument('--loss', default='', type=str, required=False,
+                        choices=['GCE', 
+                                 'CE'], 
                         help='(default=%(default)s)')
     parser.add_argument('--trainer', default='', type=str, required=True,
                         choices=['lwf', 

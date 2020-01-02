@@ -18,25 +18,29 @@ torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 args = arguments.get_args()
 
-log_name = '{}_{}_{}_{}_memsz_{}_alpha_{}_base_{}_replay_{}_batch_{}_epoch_{}_factor_{}_{}'.format(
+log_name = '{}_{}_{}_{}_memsz_{}_alpha_{}_beta_{}_base_{}_replay_{}_batch_{}_epoch_{}_factor_{}_{}_{}'.format(
     args.date,
     args.dataset,
     args.trainer,
     args.seed,
     args.memory_budget,
     args.alpha,
+    args.beta,
     args.base_classes,
     args.replay_batch_size,
     args.batch_size,
     args.epochs_class,
     args.factor,
-    args.strategy
+    args.strategy,
+    args.loss
 )
 
 if args.prev_new:
     log_name += '_prev_new'
 if args.uniform_penalty:
     log_name += '_uniform_penalty'
+if args.CI:
+    log_name += '_CI'
 if args.rand_init:
     log_name += '_rand_init'
 if args.lr_change:
@@ -183,7 +187,7 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     if t==1:
         total_epochs = args.epochs_class // args.factor
         schedule = schedule // args.factor
-    if t==5:
+    if t==4:
         break
     
     

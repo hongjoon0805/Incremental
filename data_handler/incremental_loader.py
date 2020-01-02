@@ -16,7 +16,7 @@ from torch.autograd import Variable
 
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, loader = None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'coreset'):
+    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, loader = None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'coreset', self_sup = False):
         if shuffle_idx is not None:
             # label shuffle
             print("Label shuffled")
@@ -55,6 +55,7 @@ class IncrementalLoader(td.Dataset):
         
         self.strategy = strategy
         self.approach = approach
+        self.self_sup = self_sup
         self.exemplar = []
         self.start_point = []
         for i in range(classes):
@@ -182,12 +183,13 @@ class IncrementalLoader(td.Dataset):
             img = Image.fromarray(img)
         except:
             img = self.loader(img[0])
-            
+        
         if self.transform is not None:
+            # rotation + affine 관련된 transform을 추가한 후 학습하자. 
             img = self.transform(img)
 
         return img, self.labels[index], self.labelsNormal[index]
-   
+
 class ResultLoader(td.Dataset):
     def __init__(self, data, labels, transform=None, loader = None):
         

@@ -9,6 +9,7 @@ from __future__ import print_function
 import copy
 import logging
 
+import math
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -18,6 +19,35 @@ from PIL import Image
 from tqdm import tqdm
 
 import networks
+
+class GuidedComplementEntropy(nn.Module):
+
+    def __init__(self, alpha, classes):
+        super(GuidedComplementEntropy, self).__init__()
+        self.alpha = alpha
+        self.classes=classes
+
+    # here we implemented step by step for corresponding to our formula
+    # described in the paper
+    def forward(self, yHat, y):
+        self.batch_size = len(y)
+        yHat = F.softmax(yHat, dim=1)
+#         print(yHat.shape)
+#         print(y.shape)
+        Yg = torch.gather(yHat, 1, torch.unsqueeze(y, 1))
+        Yg_ = (1 - Yg) + 1e-7  # avoiding numerical issues (first)
+        # avoiding numerical issues (second)
+        guided_factor = (Yg + 1e-7) ** self.alpha
+        Px = yHat / Yg_.view(len(yHat), 1)
+        Px_log = torch.log(Px + 1e-10)  # avoiding numerical issues (third)
+        y_zerohot = torch.ones(self.batch_size, self.classes).scatter_(
+            1, y.view(self.batch_size, 1).data, 0)
+        output = Px * Px_log * y_zerohot
+        guided_output = guided_factor.squeeze() * torch.sum(output, dim=1)
+        loss = torch.sum(guided_output)
+        loss /= float(self.batch_size)
+        loss /= math.log(float(self.classes))
+        return loss
 
 class ExemplarLoader(td.Dataset):
     def __init__(self, train_dataset):
@@ -69,6 +99,7 @@ class GenericTrainer:
         self.all_classes = list(range(dataset.classes))
         self.all_classes.sort(reverse=True)
         self.ce=torch.nn.CrossEntropyLoss()
+        self.gce = GuidedComplementEntropy(self.args.alpha, self.args.step_size)
         self.model_single = copy.deepcopy(self.model)
         self.optimizer_single = None
 
@@ -166,23 +197,29 @@ class Trainer(GenericTrainer):
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
             y_onehot.zero_()
-            target.unsqueeze_(1)
-            y_onehot.scatter_(1, target, 1)
+#             target.unsqueeze_(1)
+            y_onehot.scatter_(1, torch.unsqueeze(target, 1), 1)
+#             target = target.squeeze()
             
             uniform = torch.ones_like(y_onehot)
             
             output = self.model(data)
             
             output_log = F.log_softmax(output[:batch_size,start:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[:batch_size,start:end], reduction = 'batchmean')
-            loss_CE += F.kl_div(output_log, uniform[:batch_size,start:end] / (end-start), 
-                               reduction = 'batchmean') * self.args.alpha
+            if self.args.loss == 'GCE':
+                loss_CE = self.gce(output[:batch_size,start:end], target % (end - start))
+            else:
+                loss_CE = F.kl_div(output_log, y_onehot[:batch_size,start:end], reduction = 'batchmean')
             
-            if tasknum > 0:
+            if self.args.CI:
+                loss_CE += F.kl_div(output_log, uniform[:batch_size,start:end] / (end-start), 
+                                   reduction = 'batchmean') * self.args.beta
+            
+            if tasknum > 0 and self.args.uniform_penalty:
                 prev_uni = output[batch_size:batch_size+replay_size,start:end]
                 prev_uni_log = F.log_softmax(prev_uni, dim=1)
                 loss_uni_prev = F.kl_div(prev_uni_log, uniform[:replay_size,start:end] / (end-start), 
-                                         reduction = 'batchmean') * self.args.alpha
+                                         reduction = 'batchmean') * self.args.beta
                 loss_CE += loss_uni_prev
             
             self.optimizer.zero_grad()
