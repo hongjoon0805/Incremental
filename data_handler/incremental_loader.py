@@ -13,7 +13,7 @@ import torch.utils.data as td
 from sklearn.utils import shuffle
 from PIL import Image
 from torch.autograd import Variable
-
+import torchvision.transforms.functional as trnF
 
 class IncrementalLoader(td.Dataset):
     def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, loader = None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'coreset', self_sup = False):
@@ -138,32 +138,6 @@ class IncrementalLoader(td.Dataset):
                 weight = weight-1
             self.exemplar += range(start, start+weight*k)
     
-    def sample_exemplar(self):
-        exemplar_idx = shuffle(np.array(self.exemplar))[:self.batch_size]
-        
-        img_arr = []
-        labels_arr = []
-        labels_Normal_arr = []
-        
-        for idx in exemplar_idx:
-            img = self.data[idx]
-            try:
-                img = Image.fromarray(img)
-            except:
-                img = self.loader(img[0])
-            if self.transform is not None:
-                img = self.transform(img)
-            img_arr.append(img)
-            labels_arr.append(torch.tensor(self.labels[idx]))
-            labels_Normal_arr.append(torch.tensor(self.labelsNormal[idx]))
-        
-        img = torch.stack(img_arr)
-        labels = torch.stack(labels_arr)
-        labelsNormal = torch.stack(labels_Normal_arr)
-        
-        return img, labels, labelsNormal
-        
-    
     def __len__(self):
         if self.mode == 'train':
             return self.len
@@ -179,16 +153,24 @@ class IncrementalLoader(td.Dataset):
                 index = self.start_idx + index
                 
         img = self.data[index]
+        
         try:
             img = Image.fromarray(img)
         except:
             img = self.loader(img[0])
         
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        
         if self.transform is not None:
-            # rotation + affine 관련된 transform을 추가한 후 학습하자. 
             img = self.transform(img)
+            img = (img - mean) / std
+            img = trnF.to_tensor(img.copy()).unsqueeze(0).numpy()
+            img = np.concatenate((img, np.rot90(img, 1, axes=(2, 3)),
+                            np.rot90(img, 2, axes=(2, 3)), np.rot90(img, 3, axes=(2, 3))), 0)
+            img = torch.FloatTensor(img)
 
-        return img, self.labels[index], self.labelsNormal[index]
+        return img, np.array([self.labelsNormal[index]]*4), np.array([0,1,2,3])
 
 class ResultLoader(td.Dataset):
     def __init__(self, data, labels, transform=None, loader = None):
@@ -217,10 +199,18 @@ class ResultLoader(td.Dataset):
         except:
             img = self.loader(img[0])
             
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        
         if self.transform is not None:
             img = self.transform(img)
+            img = (img - mean) / std
+            img = trnF.to_tensor(img.copy()).unsqueeze(0).numpy()
+            img = np.concatenate((img, np.rot90(img, 1, axes=(2, 3)),
+                            np.rot90(img, 2, axes=(2, 3)), np.rot90(img, 3, axes=(2, 3))), 0)
+            img = torch.FloatTensor(img)
 
-        return img, self.labels[index], self.labelsNormal[index]
+        return img, np.array([self.labelsNormal[index]]*4), np.array([0,1,2,3])
 
 def make_ResultLoaders(data, labels, classes, step_size, transform = None, loader = None, shuffle_idx=None, base_classes=50):
     if shuffle_idx is not None:

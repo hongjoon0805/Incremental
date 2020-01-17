@@ -15,7 +15,6 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.utils.data as td
-import torchvision.transforms.functional as trnF
 from PIL import Image
 from tqdm import tqdm
 
@@ -43,6 +42,34 @@ class ExemplarLoader(td.Dataset):
         except:
             img = self.loader(img[0])
             
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, self.labels[index], self.labelsNormal[index]
+    
+class SelfSupervisedLoader(td.Dataset):
+    def __init__(self, train_dataset):
+        
+        self.data = train_dataset.data
+        self.labels = train_dataset.labels
+        self.labelsNormal = train_dataset.labelsNormal
+        self.data = train_dataset.data
+        self.transform = train_dataset.transform
+        self.loader = train_dataset.loader
+        self.start_idx = train_dataset.start_idx
+        self.end_idx = train_dataset.end_idx
+
+    def __len__(self):
+        return self.labels.shape[0]
+    
+    def __getitem__(self, index):
+        index = self.exemplar[index % self.mem_sz]
+        img = self.data[index]
+        try:
+            img = Image.fromarray(img)
+        except:
+            img = self.loader(img[0])
+            
         mean = np.array([0.485, 0.456, 0.406])
         std = np.array([0.229, 0.224, 0.225])
         
@@ -55,7 +82,6 @@ class ExemplarLoader(td.Dataset):
             img = torch.FloatTensor(img)
 
         return img, np.array([self.labelsNormal[index]]*4), np.array([0,1,2,3])
-    
 
 class GenericTrainer:
     '''
@@ -147,22 +173,28 @@ class Trainer(GenericTrainer):
                                                         batch_size=self.args.replay_batch_size, 
                                                         shuffle=True, drop_last=True, **kwargs)
         
+        selfsupervised_dataset_loaders = SelfSupervisedLoader(self.train_data_iterator.dataset)
+        exemplar_iterator = torch.utils.data.DataLoader(selfsupervised_dataset_loaders,
+                                                        batch_size=self.args.batch_size, 
+                                                        shuffle=True, drop_last=True, **kwargs)
+        
+        
         if tasknum > 0:
-            iterator = zip(self.train_data_iterator, exemplar_iterator)
+            iterator = zip(selfsupervised_dataset_loaders, exemplar_iterator)
         else:
-            iterator = self.train_data_iterator
+            iterator = selfsupervised_dataset_loaders
             
         for samples in tqdm(iterator):
             if tasknum > 0:
                 curr, prev = samples
                 
                 data, target, target_rot = curr
-                data, target, target_rot = data.cuda(), target.cuda(), target_rot.cuda()
+                data, target, target_rot = data.cuda(), target.cuda(), rot_target.cuda()
                 
                 batch_size = data.shape[0]
                 
                 data_r, target_r, target_rot_r = prev
-                data_r, target_r, target_rot_r = data_r.cuda(), target_r.cuda(), target_rot_r.cuda()
+                data_r, target_r, target_rot_r = data_r.cuda(), target_r.cuda(), rot_target_r.cuda()
                 
                 replay_size = data_r.shape[0]
                 
@@ -195,56 +227,57 @@ class Trainer(GenericTrainer):
             uniform = torch.ones_like(y_onehot)
             
             output = self.model(data)
-            output_log = F.log_softmax(output[:batch_size,mid:end], dim=1)
+            output_log = F.log_softmax(output[:batch_size,start:end], dim=1)
             output_rot_log = F.log_softmax(output[:batch_size,1000:1004], dim=1)
             
-#             if self.args.loss == 'GCE':
-#                 loss_CE = self.gce(output[:batch_size,start:end], target % (end - start))
-#             else:
-                
-            if self.args.prev_new:
-                loss_CE_curr = 0
-                loss_CE_prev = 0
-
-                curr = output[:batch_size,mid:end]
-                curr_log = F.log_softmax(curr, dim=1)
-                loss_CE_curr = F.kl_div(curr_log, y_onehot[:batch_size,mid:end], reduction='sum')
-
-                curr_rot = output[:batch_size,1000:1004]
-                curr_rot_log = F.log_softmax(curr_rot, dim=1)
-                loss_rot_CE_curr = F.kl_div(curr_rot_log, y_onehot_rot[:batch_size], reduction='sum')
-
-                loss_CE_curr += loss_rot_CE_curr
-
-                if tasknum > 0:
-                    prev = output[batch_size:batch_size+replay_size,start:mid]
-                    prev_log = F.log_softmax(prev, dim=1)
-                    loss_CE_prev = F.kl_div(prev_log, y_onehot[batch_size:batch_size+replay_size,start:mid], reduction='sum')
-
-                    loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size)
-                else:
-                    loss_CE = loss_CE_curr / batch_size
-
+            if self.args.loss == 'GCE':
+                loss_CE = self.gce(output[:batch_size,start:end], target % (end - start))
             else:
-                loss_CE = F.kl_div(output_log, y_onehot[:batch_size,start:end], reduction = 'batchmean')
-                loss_rot_CE = F.kl_div(output_rot_log, y_onehot_rot[:batch_size], reduction = 'batchmean')
-                loss_CE += loss_rot_CE
+                
+                if self.args.prev_new:
+                    loss_CE_curr = 0
+                    loss_CE_prev = 0
+
+                    curr = output[:batch_size,mid:end]
+                    curr_log = F.log_softmax(curr, dim=1)
+                    loss_CE_curr = F.kl_div(curr_log, y_onehot[:batch_size,mid:end], reduction='sum')
+                    
+                    curr_rot = output[:batch_size,1000:1004]
+                    curr_rot_log = F.log_softmax(curr_rot, dim=1)
+                    loss_rot_CE_curr = F.kl_div(curr_rot_log, y_onehot_rot[:batch_size], reduction='sum')
+                    
+                    loss_CE_curr += loss_rot_CE_curr
+
+                    if tasknum > 0:
+                        prev = output[batch_size:batch_size+replay_size,start:mid]
+                        prev_log = F.log_softmax(prev, dim=1)
+                        loss_CE_prev = F.kl_div(prev_log, y_onehot[batch_size:batch_size+replay_size,start:mid], reduction='sum')
+                        
+#                         prev_rot = output[batch_size:batch_size+replay_size,1000:1004]
+#                         prev_rot_log = F.log_softmax(prev_rot, dim=1)
+#                         loss_rot_CE_prev = F.kl_div(prev_rot_log, 
+#                                                     y_onehot_rot[batch_size:batch_size+replay_size], reduction='sum')
+                        
+#                         loss_CE_prev  += loss_rot_CE_prev 
+
+                        loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size)
+                    else:
+                        loss_CE = loss_CE_curr / batch_size
+                
+                else:
+                    loss_CE = F.kl_div(output_log, y_onehot[:batch_size,start:end], reduction = 'batchmean')
+                    loss_rot_CE = F.kl_div(output_rot_log, y_onehot_rot[:batch_size], reduction = 'batchmean')
+                    loss_CE += loss_rot_CE
 
             if self.args.CI:
-                loss_CE += F.kl_div(output_log, uniform[:batch_size,mid:end] / (end-mid), 
+                loss_CE += F.kl_div(output_log, uniform[:batch_size,start:end] / (end-start), 
                                    reduction = 'batchmean') * self.args.beta
             
             if tasknum > 0 and self.args.uniform_penalty:
-                prev_uni = output[batch_size:batch_size+replay_size,mid:end]
+                prev_uni = output[batch_size:batch_size+replay_size,start:end]
                 prev_uni_log = F.log_softmax(prev_uni, dim=1)
-                loss_uni_prev = F.kl_div(prev_uni_log, uniform[:replay_size,mid:end] / (end-mid), 
+                loss_uni_prev = F.kl_div(prev_uni_log, uniform[:replay_size,start:end] / (end-start), 
                                          reduction = 'batchmean') * self.args.beta
-                
-                prev_rot_uni = output[batch_size:batch_size+replay_size,1000:1004]
-                prev_rot_uni_log = F.log_softmax(prev_rot_uni, dim=1)
-                loss_rot_uni_prev = F.kl_div(prev_rot_uni_log, uniform[:replay_size,:4] / 4, 
-                                         reduction = 'batchmean') * self.args.beta / 10
-                
                 loss_CE += loss_uni_prev
             
             self.optimizer.zero_grad()

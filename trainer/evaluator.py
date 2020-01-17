@@ -167,19 +167,34 @@ class softmax_evaluator():
         
         self.bin_target_arr = []
         self.bin_prob_arr = []
-        for data, y, target in loader:
-            data, y, target = data.cuda(), y.cuda(), target.cuda()
+        for data, target, target_rot in loader:
+            data, target, target_rot = data.cuda(), target.cuda(), target_rot.cuda()
+            data = data.view(-1, 3, 224, 224)
+            target = target.view(data.size(0), -1).squeeze()
+            target_rot = target_rot.view(data.size(0), -1).squeeze()
             
             self.batch_size = data.shape[0]
             total += data.shape[0]
+
             
             if mode == 'test' and end > step_size:
 #                 bin_target = target.data.cpu().numpy() < (end-step_size)
-                bin_target = target.data.cpu().numpy() >= (end-step_size)
+                bin_target = target[np.arange(self.batch_size//4)*4].data.cpu().numpy() >= (end-step_size)
 
                 out, bin_out = model(data, bc=True)
                 
                 bin_out = F.softmax(out[:,end-step_size:end],dim=1).data.max(1, keepdim=True)[0].squeeze()
+                output_log = F.log_softmax(out[:,end-step_size:end], dim=1)
+                
+                uniform = torch.ones((self.batch_size, step_size))
+                
+                uniform_kl = F.kl_div(output_log, uniform / (step_size), reduce=False).sum(dim=1)
+                uniform_kl  = uniform_kl.view(self.batch_size//4,4).mean(dim=1)
+                
+                rot_CE = F.cross_entropy(out[:,1000:1004], target_rot, reduce=False)
+                rot_CE = rot_CE.view(self.batch_size//4,4).mean(dim=1)
+                
+                bin_out = (uniform_kl + rot_CE)
                 
                 self.bin_cnt(bin_out, bin_target)
 
@@ -234,12 +249,12 @@ class softmax_evaluator():
 #             auroc = roc_auc_score(bin_target, bin_prob)
         
             for head in ['all','prev_new','task','cheat','bin']:
-                self.correct[head] = 100. * self.correct[head] / len(loader.dataset)
-                self.correct_5[head] = 100. * self.correct_5[head] / len(loader.dataset)
+                self.correct[head] = 100. * self.correct[head] / total
+                self.correct_5[head] = 100. * self.correct_5[head] / total
             self.stat['all'][6] = self.stat['prev_new'][6] = self.stat['task'][6] = total
             return self.correct, self.correct_5, self.stat, bin_target, bin_prob
 
-        return 100. * correct / len(loader.dataset), 100. * correct_5 / len(loader.dataset), 
+        return 100. * correct / total, 100. * correct_5 / total, 
     
     def bin_cnt(self, bin_out, bin_target):
 #         bin_prob = F.sigmoid(bin_out).squeeze()
@@ -249,8 +264,8 @@ class softmax_evaluator():
 
         self.bin_target_arr.append(bin_target)
         self.bin_prob_arr.append(bin_prob)
-
-        self.correct['bin'] += (bin_pred == bin_target).sum()
+        
+#         self.correct['bin'] += (bin_pred == bin_target).sum()
         return
     
     def make_pred(self, out):

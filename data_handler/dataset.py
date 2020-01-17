@@ -59,15 +59,15 @@ class Imagenet(Dataset):
         self.train_transform = transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
+#             transforms.ToTensor(),
+#             transforms.Normalize(mean, std),
         ])
         
         self.test_transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std),
+#             transforms.ToTensor(),
+#             transforms.Normalize(mean, std),
             ])
         
         train_data = datasets.ImageFolder("../../dat/Imagenet/train", transform=self.train_transform)
