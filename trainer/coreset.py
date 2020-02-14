@@ -101,62 +101,20 @@ class Trainer(GenericTrainer):
         end = self.train_data_iterator.dataset.end
         mid = end-self.args.step_size
         
-        for data, y, target in tqdm(self.train_data_iterator):
-            data, y, target = data.cuda(), y.cuda(), target.cuda()
-            
-            oldClassesIndices = (target < (end -self.args.step_size)).int()
-            old_classes_indices = torch.squeeze(torch.nonzero((oldClassesIndices > 0)).long())
-            new_classes_indices = torch.squeeze(torch.nonzero((oldClassesIndices == 0)).long())
+        for data, target in tqdm(self.train_data_iterator):
+            data, target = data.cuda(), target.cuda()
             
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
             y_onehot.zero_()
-            target.unsqueeze_(1)
-            y_onehot.scatter_(1, target, 1)
-            
-            uniform = torch.ones_like(y_onehot)
+            y_onehot.scatter_(1, target.unsqueeze(1), 1)
             
             output = self.model(data)
-            
-            if self.args.prev_new:
-                loss_CE_curr = 0
-                loss_CE_prev = 0
-
-                curr = output[new_classes_indices,mid:end]
-                curr_log = F.log_softmax(curr, dim=1)
-                loss_CE_curr = F.kl_div(curr_log, y_onehot[new_classes_indices,mid:end], reduction='sum')
-
-
-                if tasknum > 0:
-                    prev = output[old_classes_indices,start:mid]
-                    prev_log = F.log_softmax(prev, dim=1)
-                    loss_CE_prev = F.kl_div(prev_log, y_onehot[old_classes_indices,start:mid], reduction='sum')
-                    
-                    loss_CE = (loss_CE_curr + loss_CE_prev*self.args.alpha) / (data.shape[0])
-                    
-                    if self.args.uniform_penalty:
-                        curr_uni = output[new_classes_indices,start:mid]
-                        curr_uni_log = F.log_softmax(curr_uni, dim=1)
-                        loss_uni_curr = F.kl_div(curr_uni_log, uniform[new_classes_indices,start:mid] / (mid-start),
-                                                 reduction='sum')
-                        
-                        prev_uni = output[old_classes_indices,mid:end]
-                        prev_uni_log = F.log_softmax(prev_uni, dim=1)
-                        loss_uni_prev = F.kl_div(prev_uni_log, uniform[old_classes_indices,mid:end] / (end-mid),
-                                                 reduction='sum')
-                        loss_CE = loss_CE + (loss_uni_curr + loss_uni_prev) / (data.shape[0])
-                        
-                else:
-                    loss_CE = loss_CE_curr / data.shape[0]
-            else:
-                output_log = F.log_softmax(output[:,:end], dim=1)
-                loss_CE = F.kl_div(output_log, y_onehot[:,:end])
-            
-            # 일단 local distillation은 보류.
-            loss_KD = 0
+            output_log = F.log_softmax(output[:,:end], dim=1)
+            loss_CE = F.kl_div(output_log, y_onehot[:,:end], reduction='batchmean')
             
             self.optimizer.zero_grad()
-            (loss_KD + loss_CE).backward()
+            (loss_CE).backward()
             self.optimizer.step()
 
     def add_model(self):

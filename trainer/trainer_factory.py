@@ -17,4 +17,6 @@ class TrainerFactory():
             import trainer.coreset as trainer
         elif args.trainer == 'ood':
             import trainer.ood as trainer
+        elif args.trainer == 'bin_finetune':
+            import trainer.bin_finetune as trainer
         return trainer.Trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)

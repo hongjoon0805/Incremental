@@ -9,8 +9,6 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
-from torchnet.meter import confusionmeter
 from numpy.linalg import inv
 from sklearn.metrics import roc_auc_score
 
@@ -29,6 +27,8 @@ class EvaluatorFactory():
     def get_evaluator(testType="nmc", classes=100):
         if testType == "trainedClassifier":
             return softmax_evaluator()
+        if testType == "binaryClassifier":
+            return sigmoid_evaluator()
         if testType == "generativeClassifier":
             return GDA(classes)
 
@@ -167,34 +167,19 @@ class softmax_evaluator():
         
         self.bin_target_arr = []
         self.bin_prob_arr = []
-        for data, target, target_rot in loader:
-            data, target, target_rot = data.cuda(), target.cuda(), target_rot.cuda()
-            data = data.view(-1, 3, 224, 224)
-            target = target.view(data.size(0), -1).squeeze()
-            target_rot = target_rot.view(data.size(0), -1).squeeze()
+        for data, target in loader:
+            data, target = data.cuda(), target.cuda()
             
             self.batch_size = data.shape[0]
             total += data.shape[0]
 
             
             if mode == 'test' and end > step_size:
-#                 bin_target = target.data.cpu().numpy() < (end-step_size)
-                bin_target = target[np.arange(self.batch_size//4)*4].data.cpu().numpy() >= (end-step_size)
+                bin_target = target.data.cpu().numpy() >= (end-step_size)
 
                 out, bin_out = model(data, bc=True)
                 
                 bin_out = F.softmax(out[:,end-step_size:end],dim=1).data.max(1, keepdim=True)[0].squeeze()
-                output_log = F.log_softmax(out[:,end-step_size:end], dim=1)
-                
-                uniform = torch.ones((self.batch_size, step_size))
-                
-                uniform_kl = F.kl_div(output_log, uniform / (step_size), reduce=False).sum(dim=1)
-                uniform_kl  = uniform_kl.view(self.batch_size//4,4).mean(dim=1)
-                
-                rot_CE = F.cross_entropy(out[:,1000:1004], target_rot, reduce=False)
-                rot_CE = rot_CE.view(self.batch_size//4,4).mean(dim=1)
-                
-                bin_out = (uniform_kl + rot_CE)
                 
                 self.bin_cnt(bin_out, bin_target)
 
@@ -265,7 +250,6 @@ class softmax_evaluator():
         self.bin_target_arr.append(bin_target)
         self.bin_prob_arr.append(bin_prob)
         
-#         self.correct['bin'] += (bin_pred == bin_target).sum()
         return
     
     def make_pred(self, out):
@@ -319,4 +303,50 @@ class softmax_evaluator():
             self.stat[head][3] += cn_
             self.stat[head][4] += enn_
             self.stat[head][5] += enp_
+        return
+    
+class sigmoid_evaluator():
+    '''
+    Evaluator class for softmax classification 
+    '''
+
+    def __init__(self):
+        pass
+
+    def evaluate(self, model, loader, start, end, step_size=100):
+        '''
+        :param model: Trained model
+        :param loader: Data iterator
+        :return: 
+        '''
+        model.eval()
+        correct = 0
+        correct_5 = 0
+        total = 0
+        self.start = start
+        self.end = end
+        self.step_size = step_size
+        
+        self.bin_target_arr = []
+        self.bin_prob_arr = []
+        for data, target in loader:
+            data, target = data.cuda(), target.cuda()
+            
+            self.batch_size = data.shape[0]
+            total += data.shape[0]
+            
+            bin_target = target.data.cpu().numpy() >= (end-step_size)
+            _, bin_out = model(data, bc=True)
+            self.bin_cnt(bin_out, bin_target)
+
+        bin_target = np.hstack(self.bin_target_arr)
+        bin_prob = np.hstack(self.bin_prob_arr)
+        
+        return bin_target, bin_prob
+    
+    def bin_cnt(self, bin_out, bin_target):
+        bin_prob = torch.sigmoid(bin_out).squeeze().data.cpu().numpy()
+        self.bin_target_arr.append(bin_target)
+        self.bin_prob_arr.append(bin_prob)
+        
         return

@@ -19,6 +19,50 @@ from tqdm import tqdm
 
 import networks
 
+
+class CutMixCollator:
+    def __init__(self, alpha):
+        self.alpha = alpha
+
+    def __call__(self, batch):
+        batch = torch.utils.data.dataloader.default_collate(batch)
+        batch = self.cutmix(batch, self.alpha)
+        return batch
+    
+    def cutmix(self,batch, alpha):
+        data, targets = batch
+
+        indices = torch.randperm(data.size(0))
+        shuffled_data = data[indices]
+        shuffled_targets = targets[indices]
+
+        lam = np.random.beta(alpha, alpha)
+
+        image_h, image_w = data.shape[2:]
+        cx = np.random.uniform(0, image_w)
+        cy = np.random.uniform(0, image_h)
+        w = image_w * np.sqrt(1 - lam)
+        h = image_h * np.sqrt(1 - lam)
+        x0 = int(np.round(max(cx - w / 2, 0)))
+        x1 = int(np.round(min(cx + w / 2, image_w)))
+        y0 = int(np.round(max(cy - h / 2, 0)))
+        y1 = int(np.round(min(cy + h / 2, image_h)))
+
+        data[:, :, y0:y1, x0:x1] = shuffled_data[:, :, y0:y1, x0:x1]
+        targets = (targets, shuffled_targets, lam)
+
+    return data, targets
+
+
+class CutMixCriterion:
+    def __init__(self, reduction):
+        self.criterion = nn.CrossEntropyLoss(reduction=reduction)
+
+    def __call__(self, preds, targets):
+        targets1, targets2, lam = targets
+        return lam * self.criterion(
+            preds, targets1) + (1 - lam) * self.criterion(preds, targets2)
+
 class ExemplarLoader(td.Dataset):
     def __init__(self, train_dataset):
         
@@ -44,7 +88,7 @@ class ExemplarLoader(td.Dataset):
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, self.labels[index], self.labelsNormal[index]
+        return img, self.labelsNormal[index]
 
 class GenericTrainer:
     '''
@@ -68,7 +112,8 @@ class GenericTrainer:
         self.current_lr = args.lr
         self.all_classes = list(range(dataset.classes))
         self.all_classes.sort(reverse=True)
-        self.ce=torch.nn.CrossEntropyLoss()
+        self.ce=torch.nn.CrossEntropyLoss(reduction='sum')
+        self.CutMux_CE = CutMixCriterion('sum')
         self.model_single = copy.deepcopy(self.model)
         self.optimizer_single = None
 
@@ -147,92 +192,55 @@ class Trainer(GenericTrainer):
             if tasknum > 0:
                 curr, prev = samples
                 
-                data, y, target = curr
-                data, y, target = data.cuda(), y.cuda(), target.cuda()
+                data, target = curr
+                data, target = data.cuda(), target.cuda()
                 
                 batch_size = data.shape[0]
                 
-                data_r, y_r, target_r = prev
-                data_r, y_r, target_r = data_r.cuda(), y_r.cuda(), target_r.cuda()
+                data_r, target_r = prev
+                data_r, target_r = data_r.cuda(), target_r.cuda()
                 
                 replay_size = data_r.shape[0]
                 
                 data = torch.cat((data,data_r))
-                y = torch.cat((y,y_r))
                 target = torch.cat((target,target_r))
                 
             else:
-                data, y, target = samples
-                data, y, target = data.cuda(), y.cuda(), target.cuda()
+                data, target = samples
+                data, target = data.cuda(), target.cuda()
             
                 batch_size = data.shape[0]
             
             y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
             y_onehot.zero_()
-            target.unsqueeze_(1)
-            y_onehot.scatter_(1, target, 1)
-            
-            uniform = torch.ones_like(y_onehot)
+            y_onehot.scatter_(1, target.unsqueeze(1), 1)
             
             output, bin_out = self.model(data, bc=True)
             
-            if self.args.prev_new:
-                loss_CE_curr = 0
-                loss_CE_prev = 0
+            loss_CE_curr = 0
+            loss_CE_prev = 0
 
-                curr = output[:batch_size,mid:end]
-                curr_log = F.log_softmax(curr, dim=1)
-                loss_CE_curr = F.kl_div(curr_log, y_onehot[:batch_size,mid:end], reduction='sum')
-
-
-                if tasknum > 0:
-                    prev = output[batch_size:batch_size+replay_size,start:mid]
-                    prev_log = F.log_softmax(prev, dim=1)
-                    loss_CE_prev = F.kl_div(prev_log, y_onehot[batch_size:batch_size+replay_size,start:mid], reduction='sum')
-
-                    loss_CE = (loss_CE_curr + loss_CE_prev*self.args.alpha) / (batch_size + replay_size)
-                    
-                    if self.args.uniform_penalty:
-#                         curr_uni = output[:batch_size,start:mid]
-#                         curr_uni_log = F.log_softmax(curr_uni, dim=1)
-#                         loss_uni_curr = F.kl_div(curr_uni_log, uniform[:batch_size,start:mid] / (mid-start),
-#                                                  reduction='sum')
-                        
-                        prev_uni = output[batch_size:batch_size+replay_size,mid:end]
-                        prev_uni_log = F.log_softmax(prev_uni, dim=1)
-                        loss_uni_prev = F.kl_div(prev_uni_log, uniform[batch_size:batch_size+replay_size,mid:end] / (end-mid),
-                                                 reduction='sum')
-#                         loss_CE = loss_CE + (loss_uni_curr + loss_uni_prev) / (batch_size + replay_size)
-                        loss_CE = loss_CE + (loss_uni_prev) / (replay_size)
-                    
-                else:
-                    loss_CE = loss_CE_curr / batch_size
-            else:
-                output_log = F.log_softmax(output[:,:end], dim=1)
-                loss_CE = F.kl_div(output_log, y_onehot[:,:end], reduction = 'batchmean')
-
-            # prev: 1
-            # new : 0
-            loss_BCE = 0
-            if tasknum > 0:
-                binary_target = torch.zeros(batch_size + replay_size).cuda()
-                binary_target[batch_size:batch_size+replay_size] = 1
-                # Binary Classification using sigmoid output
-                if self.args.bin_sigmoid:
-                    prev_prob = F.sigmoid(bin_out).squeeze()
-                    loss_BCE = F.binary_cross_entropy(prev_prob, binary_target)
-
-                # Binary Classification using softmax output
-                elif self.args.bin_softmax:
-                    prev_prob = F.softmax(output[:,:end], dim=1)[:,:mid].sum(dim=1)
-                    loss_BCE = F.binary_crosse_entropy(prev_prob, binary_target)
+            curr = output[:batch_size,mid:end]
+            loss_CE_curr = self.ce(curr, target[:batch_size]%(end-mid))
             
-            loss_KD = 0
+#             curr_log = F.log_softmax(curr, dim=1)
+#             loss_CE_curr = F.kl_div(curr_log, y_onehot[:batch_size,mid:end], reduction='sum')
+
+            if tasknum > 0:
+                prev = output[batch_size:batch_size+replay_size,start:mid]
+                loss_CE_prev = self.ce(prev, target[batch_size:batch_size+replay_size]%(mid-start))
+#                 prev_log = F.log_softmax(prev, dim=1)
+#                 loss_CE_prev = F.kl_div(prev_log, y_onehot[batch_size:batch_size+replay_size,start:mid], reduction='sum')
+                loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size)
+
+            else:
+                loss_CE = loss_CE_curr / batch_size
+
             # 일단 local distillation은 보류.
 
             self.optimizer.zero_grad()
-            (loss_KD + loss_CE + loss_BCE).backward()
+            (loss_CE).backward()
             self.optimizer.step()
 
     def add_model(self):
@@ -242,3 +250,20 @@ class Trainer(GenericTrainer):
             param.requires_grad = False
         self.models.append(model)
         print("Total Models %d"%len(self.models))
+        
+        
+#             # prev: 1
+#             # new : 0
+#             loss_BCE = 0
+#             if tasknum > 0:
+#                 binary_target = torch.zeros(batch_size + replay_size).cuda()
+#                 binary_target[batch_size:batch_size+replay_size] = 1
+#                 # Binary Classification using sigmoid output
+#                 if self.args.bin_sigmoid:
+#                     prev_prob = F.sigmoid(bin_out).squeeze()
+#                     loss_BCE = F.binary_cross_entropy(prev_prob, binary_target)
+
+#                 # Binary Classification using softmax output
+#                 elif self.args.bin_softmax:
+#                     prev_prob = F.softmax(output[:,:end], dim=1)[:,:mid].sum(dim=1)
+#                     loss_BCE = F.binary_crosse_entropy(prev_prob, binary_target)

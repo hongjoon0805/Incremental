@@ -9,9 +9,9 @@ def get_args():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                         help='learning rate (default: 0.1. Note that lr is decayed by args.gamma parameter args.schedule ')
-    parser.add_argument('--alpha', type=float, default=1, help='KD convex combination or CI strength')
+    parser.add_argument('--alpha', type=float, default=1, help='Label smoothing')
     parser.add_argument('--ratio', type=float, default=1/512, help='variance ratio')
-    parser.add_argument('--beta', type=float, default=1e-4, help='GCE strength')
+    parser.add_argument('--beta', type=float, default=1e-4, help='CI and uniform penalty strength')
     parser.add_argument('--schedule', type=int, nargs='+', default=[40,80],
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--gammas', type=float, nargs='+', default=[0.1, 0.1],
@@ -41,7 +41,7 @@ def get_args():
                         choices=['CIFAR100', 
                                  'Imagenet'], 
                         help='(default=%(default)s)')
-    parser.add_argument('--loss', default='', type=str, required=False,
+    parser.add_argument('--loss', default='CE', type=str, required=False,
                         choices=['GCE', 
                                  'CE'], 
                         help='(default=%(default)s)')
@@ -51,9 +51,14 @@ def get_args():
                                  'bayes',
                                  'gda',
                                  'coreset',
-                                 'ood'], 
+                                 'ood',
+                                 'bin_finetune'], 
                         help='(default=%(default)s)')
-    parser.add_argument('--strategy', default='', type=str, required=True,
+    parser.add_argument('--option', default='', type=str, required=True,
+                        choices=['er', 
+                                 'coreset'], 
+                        help='(default=%(default)s)')
+    parser.add_argument('--strategy', default='RingBuffer', type=str, required=False,
                         choices=['Reservior', 
                                  'RingBuffer',
                                  'Weighted'], 

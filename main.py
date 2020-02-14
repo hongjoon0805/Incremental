@@ -18,6 +18,21 @@ torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 args = arguments.get_args()
 
+if args.trainer == 'bin_finetune':
+    log_name = '{}_{}_{}_{}_{}_memsz_{}_base_{}_replay_{}_batch_{}_epoch_{}_factor_{}'.format(
+        args.date,
+        args.dataset,
+        args.trainer,
+        args.option,
+        args.seed,
+        args.memory_budget,
+        args.base_classes,
+        args.replay_batch_size,
+        args.batch_size,
+        args.epochs_class,
+        args.factor
+    )
+
 log_name = '{}_{}_{}_{}_memsz_{}_alpha_{}_beta_{}_base_{}_replay_{}_batch_{}_epoch_{}_factor_{}_{}_{}'.format(
     args.date,
     args.dataset,
@@ -41,6 +56,8 @@ if args.uniform_penalty:
     log_name += '_uniform_penalty'
 if args.CI:
     log_name += '_CI'
+if args.alpha<1:
+    log_name += '_LabelSmoothing'
 if args.rand_init:
     log_name += '_rand_init'
 if args.lr_change:
@@ -128,25 +145,21 @@ if torch.cuda.device_count() > 1:
 myModel = networks.ModelFactory.get_model(args.dataset, args.ratio, args.trainer)
 myModel = torch.nn.DataParallel(myModel).cuda()
 
-# myModel_calibrated = networks.ModelFactory.get_model(args.dataset, args.ratio, args.trainer)
-# myModel_calibrated = torch.nn.DataParallel(myModel_calibrated).cuda()
-# myModel = networks.ModelFactory.get_model(args.dataset).cuda()
-
 # Define the optimizer used in the experiment
 optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
                             weight_decay=args.decay, nesterov=True)
-# optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
-#                             weight_decay=args.decay)
-# if args.trainer == 'bayes':
-#     optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum, nesterov=True)
 
 # Trainer object used for training
 myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
-# myTrainer_calibrated = trainer.TrainerFactory.get_trainer(train_iterator, 
-#                                                           test_iterator, dataset, myModel_calibrated, args, optimizer)
+
 
 # Initilize the evaluators used to measure the performance of the system.
-t_classifier = trainer.EvaluatorFactory.get_evaluator("trainedClassifier")
+if args.trainer == 'bin_finetune':
+    testType = "binaryClassifier"
+elif args.trainer == 'er' or args.trainer == 'coreset':
+    testType = "trainedClassifier"
+
+t_classifier = trainer.EvaluatorFactory.get_evaluator(testType)
 if args.trainer == 'gda':
     gda_classifier = trainer.EvaluatorFactory.get_evaluator("generativeClassifier")
     results_gda = np.zeros(dataset.classes // args.step_size)
@@ -178,7 +191,13 @@ results['task_soft_1'] = np.zeros((tasknum, tasknum))
 results['task_soft_5'] = np.zeros((tasknum, tasknum))
 
 for t in range((dataset.classes-args.base_classes)//args.step_size+1):
+    if t==0 and args.trainer == 'bin_finetune':
+        myTrainer.increment_classes()
+        train_end = train_end + args.step_size
+        test_end = test_end + args.step_size
+        continue
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
+    print(len(train_dataset_loader.exemplar))
     # Add new classes to the train, and test iterator
     lr = args.lr
     if args.lr_change:
@@ -187,9 +206,8 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     if t==1:
         total_epochs = args.epochs_class // args.factor
         schedule = schedule // args.factor
-    if t==4:
-        break
-    
+#     if t==4:
+#         break
     
     if args.trainer == 'ood' and args.rand_init:
         myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
@@ -203,105 +221,131 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         # print(my_trainer.threshold)
         if epoch % 5 == (5 - 1):
             
-            
             if t>0:
-                train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
-                print("*********CURRENT EPOCH********** : %d"%epoch)
-                print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
-                print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
-                
-                correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
-                                                                                       test_start, test_end, 
-                                                                                       mode='test', step_size=args.step_size)
-                
-                auroc = roc_auc_score(bin_target, bin_prob)
-                
-                print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
-                print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
-                print("Test Classifier top-1 (Softmax, prev_new): %0.2f"%correct['prev_new'])
-                print("Test Classifier top-5 (Softmax, prev_new): %0.2f"%correct_5['prev_new'])
-                print("Test Classifier top-1 (Softmax, task): %0.2f"%correct['task'])
-                print("Test Classifier top-5 (Softmax, task): %0.2f"%correct_5['task'])
-                print("Test Classifier top-1 (Softmax, cheat): %0.2f"%correct['cheat'])
-                print("Test Classifier top-5 (Softmax, cheat): %0.2f"%correct_5['cheat'])
-                print("Test Classifier (Binary Classification): %0.2f"%correct['bin'])
-                print("Test Classifier (AUROC): %0.2f"%auroc)
-                for head in ['all', 'prev_new', 'task']:
-                    print('Test stat for %s'%head)
-                    print('cp: %d'%stat[head][0])
-                    print('epp: %d'%stat[head][1])
-                    print('epn: %d'%stat[head][2])
-                    print('cn: %d'%stat[head][3])
-                    print('enn: %d'%stat[head][4])
-                    print('enp: %d'%stat[head][5])
-                    print('total: %d'%stat[head][6])
-            else:
-                train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
-                print("*********CURRENT EPOCH********** : %d"%epoch)
-                print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
-                print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
-                test_1, test_5 = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end, 
-                                                          mode='test', step_size=args.step_size)
-                print("Test Classifier top-1 (Softmax): %0.2f"%test_1)
-                print("Test Classifier top-5 (Softmax): %0.2f"%test_5)
+                if args.trainer == 'bin_finetune':
+                    train_dataset_loader.approach = 'coreset'
+                    train_dataset_loader.len += args.memory_budget
+                    bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
+                    train_dataset_loader.approach = args.trainer
+                    train_dataset_loader.len -= args.memory_budget
+                    auroc = roc_auc_score(bin_target, bin_prob)
+                    print("Train Classifier (AUROC): %0.2f"%auroc)
+
+                    bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end)
+                    auroc = roc_auc_score(bin_target, bin_prob)
+                    print("Test Classifier (AUROC): %0.2f"%auroc)
+                elif args.trainer == 'er' or args.trainer == 'coreset':    
+                    train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
+                    print("*********CURRENT EPOCH********** : %d"%epoch)
+                    print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
+                    print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
+
+                    correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
+                                                                                           test_start, test_end, 
+                                                                                           mode='test', step_size=args.step_size)
+
+                    auroc = roc_auc_score(bin_target, bin_prob)
+
+                    print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
+                    print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
+                    print("Test Classifier top-1 (Softmax, prev_new): %0.2f"%correct['prev_new'])
+                    print("Test Classifier top-5 (Softmax, prev_new): %0.2f"%correct_5['prev_new'])
+                    print("Test Classifier top-1 (Softmax, task): %0.2f"%correct['task'])
+                    print("Test Classifier top-5 (Softmax, task): %0.2f"%correct_5['task'])
+                    print("Test Classifier top-1 (Softmax, cheat): %0.2f"%correct['cheat'])
+                    print("Test Classifier top-5 (Softmax, cheat): %0.2f"%correct_5['cheat'])
+                    print("Test Classifier (Binary Classification): %0.2f"%correct['bin'])
+                    print("Test Classifier (AUROC): %0.2f"%auroc)
+                    for head in ['all', 'prev_new', 'task']:
+                        print('Test stat for %s'%head)
+                        print('cp: %d'%stat[head][0])
+                        print('epp: %d'%stat[head][1])
+                        print('epn: %d'%stat[head][2])
+                        print('cn: %d'%stat[head][3])
+                        print('enn: %d'%stat[head][4])
+                        print('enp: %d'%stat[head][5])
+                        print('total: %d'%stat[head][6])
+                else:
+                    train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
+                    print("*********CURRENT EPOCH********** : %d"%epoch)
+                    print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
+                    print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
+                    test_1, test_5 = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end, 
+                                                              mode='test', step_size=args.step_size)
+                    print("Test Classifier top-1 (Softmax): %0.2f"%test_1)
+                    print("Test Classifier top-5 (Softmax): %0.2f"%test_5)
             
-            if args.trainer == 'gda':
-                
-                gda_classifier.update_moment(myTrainer.model, train_iterator, args.step_size)
-                TrainError_gda = gda_classifier.evaluate(myTrainer.model, train_iterator, t, args.step_size, 'train')
-                TestError_gda = gda_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
-                
-                print("Train Classifier (GDA): %0.2f"%TrainError_gda)
-                print("Test Classifier (GDA): %0.2f"%TestError_gda)
+
     
     # Evaluate the learned classifier
     
     # t-SNE visualization tool 짜놓기
     # CutMix로 data 저장하는 
     
-    if t>0:
-        train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator,train_start, train_end)
-        print("*********CURRENT EPOCH********** : %d"%epoch)
-        print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
-        print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
-
-        correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
-                                                                                       test_start, test_end, 
-                                                                                       mode='test', step_size=args.step_size)
-                
-        auroc = roc_auc_score(bin_target, bin_prob)
-        
-        print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
-        print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
-        print("Test Classifier top-1 (Softmax, prev_new): %0.2f"%correct['prev_new'])
-        print("Test Classifier top-5 (Softmax, prev_new): %0.2f"%correct_5['prev_new'])
-        print("Test Classifier top-1 (Softmax, task): %0.2f"%correct['task'])
-        print("Test Classifier top-5 (Softmax, task): %0.2f"%correct_5['task'])
-        print("Test Classifier top-1 (Softmax, cheat): %0.2f"%correct['cheat'])
-        print("Test Classifier top-5 (Softmax, cheat): %0.2f"%correct_5['cheat'])
-        print("Test Classifier Final(Binary Classification): %0.2f"%correct['bin'])
-        print("Test Classifier Final(AUROC): %0.2f"%auroc)
-        for head in ['all', 'prev_new', 'task']:
-            print('Test stat Final for %s'%head)
-            print('cp: %d'%stat[head][0])
-            print('epp: %d'%stat[head][1])
-            print('epn: %d'%stat[head][2])
-            print('cn: %d'%stat[head][3])
-            print('enn: %d'%stat[head][4])
-            print('enp: %d'%stat[head][5])
-            print('total: %d'%stat[head][6])
-            
-            results[head]['correct'].append(correct[head])
-            results[head]['correct_5'].append(correct_5[head])
-            results[head]['stat'].append(stat[head])
     
-        
-        results['cheat']['correct'].append(correct['cheat'])
-        results['cheat']['correct_5'].append(correct_5['cheat'])
-        results['sigmoid'].append(correct['bin'])
-        results['auroc'].append(auroc)
-        results['bin_target'].append(bin_target)
-        results['bin_prob'].append(bin_prob)
+    
+    if t>0:
+        if args.trainer == 'bin_finetune':
+            train_dataset_loader.approach = 'coreset'
+            train_dataset_loader.len += args.memory_budget
+            bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, train_iterator, 
+                                                         train_start, train_end, step_size=args.step_size)
+            train_dataset_loader.approach = args.trainer
+            train_dataset_loader.len -= args.memory_budget
+            auroc = roc_auc_score(bin_target, bin_prob)
+            print("Train Classifier (AUROC): %0.2f"%auroc)
+
+            bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator, 
+                                                         test_start, test_end, step_size=args.step_size)
+            auroc = roc_auc_score(bin_target, bin_prob)
+            print("Test Classifier (AUROC): %0.2f"%auroc)
+            
+            results['bin_target'].append(bin_target)
+            results['bin_prob'].append(bin_prob)
+            
+        elif args.trainer == 'er' or args.trainer == 'coreset':    
+            train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator,train_start, train_end)
+            print("*********CURRENT EPOCH********** : %d"%epoch)
+            print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
+            print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
+
+            correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
+                                                                                           test_start, test_end, 
+                                                                                           mode='test', step_size=args.step_size)
+
+            auroc = roc_auc_score(bin_target, bin_prob)
+
+            print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
+            print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
+            print("Test Classifier top-1 (Softmax, prev_new): %0.2f"%correct['prev_new'])
+            print("Test Classifier top-5 (Softmax, prev_new): %0.2f"%correct_5['prev_new'])
+            print("Test Classifier top-1 (Softmax, task): %0.2f"%correct['task'])
+            print("Test Classifier top-5 (Softmax, task): %0.2f"%correct_5['task'])
+            print("Test Classifier top-1 (Softmax, cheat): %0.2f"%correct['cheat'])
+            print("Test Classifier top-5 (Softmax, cheat): %0.2f"%correct_5['cheat'])
+            print("Test Classifier Final(Binary Classification): %0.2f"%correct['bin'])
+            print("Test Classifier Final(AUROC): %0.2f"%auroc)
+            for head in ['all', 'prev_new', 'task']:
+                print('Test stat Final for %s'%head)
+                print('cp: %d'%stat[head][0])
+                print('epp: %d'%stat[head][1])
+                print('epn: %d'%stat[head][2])
+                print('cn: %d'%stat[head][3])
+                print('enn: %d'%stat[head][4])
+                print('enp: %d'%stat[head][5])
+                print('total: %d'%stat[head][6])
+
+                results[head]['correct'].append(correct[head])
+                results[head]['correct_5'].append(correct_5[head])
+                results[head]['stat'].append(stat[head])
+
+
+            results['cheat']['correct'].append(correct['cheat'])
+            results['cheat']['correct_5'].append(correct_5['cheat'])
+            results['sigmoid'].append(correct['bin'])
+            results['auroc'].append(auroc)
+            results['bin_target'].append(bin_target)
+            results['bin_prob'].append(bin_prob)
         
     else:
         train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
@@ -318,13 +362,14 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     
     start = 0
     end = args.base_classes
-    for i in range(t+1):
-        dataset_loader = result_dataset_loaders[i]
-        iterator = torch.utils.data.DataLoader(dataset_loader,
-                                               batch_size=args.batch_size, **kwargs)
-        results['task_soft_1'][t][i], results['task_soft_5'][t][i] = t_classifier.evaluate(myTrainer.model, iterator, start, end)
-        start = end
-        end += args.step_size
+    if args.trainer != 'bin_finetune':
+        for i in range(t+1):
+            dataset_loader = result_dataset_loaders[i]
+            iterator = torch.utils.data.DataLoader(dataset_loader,
+                                                   batch_size=args.batch_size, **kwargs)
+            results['task_soft_1'][t][i], results['task_soft_5'][t][i] = t_classifier.evaluate(myTrainer.model, iterator, start, end)
+            start = end
+            end += args.step_size
     
     sio.savemat('./result_data/'+log_name+'.mat',results)
     
@@ -343,3 +388,11 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
 
 
+#             if args.trainer == 'gda':
+
+#                 gda_classifier.update_moment(myTrainer.model, train_iterator, args.step_size)
+#                 TrainError_gda = gda_classifier.evaluate(myTrainer.model, train_iterator, t, args.step_size, 'train')
+#                 TestError_gda = gda_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
+
+#                 print("Train Classifier (GDA): %0.2f"%TrainError_gda)
+#                 print("Test Classifier (GDA): %0.2f"%TestError_gda)

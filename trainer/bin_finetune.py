@@ -31,16 +31,6 @@ class ExemplarLoader(td.Dataset):
         self.exemplar = train_dataset.exemplar
         self.transform = train_dataset.transform
         
-#         mean = np.array([0.485, 0.456, 0.406])
-#         std = np.array([0.229, 0.224, 0.225])
-        
-#         self.transform = transforms.Compose([
-#             transforms.RandomResizedCrop(224),
-#             transforms.RandomHorizontalFlip(),
-#             transforms.RandomRotation(180),
-#             transforms.ToTensor(),
-#             transforms.Normalize(mean, std),
-#         ])
         self.loader = train_dataset.loader
         self.mem_sz = len(self.exemplar)
 
@@ -73,13 +63,10 @@ class GenericTrainer:
         self.args = args
         self.dataset = dataset
         self.train_loader = self.train_data_iterator.dataset
-        self.older_classes = []
         self.optimizer = optimizer
         self.model_fixed = copy.deepcopy(self.model)
-        self.active_classes = []
         for param in self.model_fixed.parameters():
             param.requires_grad = False
-        self.models = []
         self.current_lr = args.lr
         self.all_classes = list(range(dataset.classes))
         self.all_classes.sort(reverse=True)
@@ -121,7 +108,15 @@ class Trainer(GenericTrainer):
         self.model_fixed.eval()
         for param in self.model_fixed.parameters():
             param.requires_grad = False
-        self.models.append(self.model_fixed)
+        tasknum = self.train_data_iterator.dataset.t
+        model_name = 'models/trained_model/RESULT_{}_{}_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_5_RingBuffer_CE_lr_change_task_{}.pt'.format(self.args.dataset, self.args.option, self.args.seed, self.args.memory_budget, self.args.base_classes, tasknum)
+        
+        self.model.load_state_dict(torch.load(model_name))
+#         self.model.module.binary_fc = nn.Linear(512, 2)
+        self.model.module.binary_fc = nn.Linear(512, 1)
+        
+        self.optimizer = torch.optim.SGD(self.model.module.binary_fc.parameters(), self.args.lr, momentum=self.args.momentum,
+                            weight_decay=self.args.decay, nesterov=True)
 
     def get_model(self):
         myModel = networks.ModelFactory.get_model(self.args.dataset).cuda()
@@ -136,108 +131,37 @@ class Trainer(GenericTrainer):
 
     def train(self, epoch):
         
-        T=2
-        
         self.model.train()
         print("Epochs %d"%epoch)
         
         tasknum = self.train_data_iterator.dataset.t
-        start = 0
-        end = self.train_data_iterator.dataset.end
-        mid = end-self.args.step_size
         kwargs = {'num_workers': 32, 'pin_memory': True}
         exemplar_dataset_loaders = ExemplarLoader(self.train_data_iterator.dataset)
         exemplar_iterator = torch.utils.data.DataLoader(exemplar_dataset_loaders,
                                                         batch_size=self.args.replay_batch_size, 
                                                         shuffle=True, drop_last=True, **kwargs)
         
-        if tasknum > 0:
-            iterator = zip(self.train_data_iterator, exemplar_iterator)
-        else:
-            iterator = self.train_data_iterator
-            
+        iterator = zip(self.train_data_iterator, exemplar_iterator)
         for samples in tqdm(iterator):
-            if tasknum > 0:
-                curr, prev = samples
-                
-                data, target = curr
-                data, target = data.cuda(), target.cuda()
-                
-                batch_size = data.shape[0]
-                
-                data_r, target_r = prev
-                data_r, target_r = data_r.cuda(), target_r.cuda()
-                
-                replay_size = data_r.shape[0]
-                
-                data = torch.cat((data,data_r))
-                target = torch.cat((target,target_r))
-                
-            else:
-                data, target = samples
-                data, target = data.cuda(), target.cuda()
-            
-                batch_size = data.shape[0]
-            
-            
-            y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
+            curr, prev = samples
 
-            y_onehot.zero_()
-            y_onehot.scatter_(1, target.unsqueeze(1), 1)
+            data, _ = curr
+            data = data.cuda()
+            batch_size = data.shape[0]
+
+            data_r, _ = prev
+            data_r = data_r.cuda()
+
+            replay_size = data_r.shape[0]
+
+            data = torch.cat((data,data_r))
+                
+            _, bin_out = self.model(data, bc=True)
+            binary_target = torch.zeros(batch_size + replay_size).cuda()
+            binary_target[:batch_size] = 1
             
-            uniform = torch.ones_like(y_onehot)
-            
-            output = self.model(data)
-            output_log = F.log_softmax(output[:batch_size,mid:end], dim=1)
-            
-                
-            if self.args.prev_new:
-                loss_CE_curr = 0
-                loss_CE_prev = 0
-
-                curr = output[:batch_size,mid:end]
-                curr_log = F.log_softmax(curr, dim=1)
-                loss_CE_curr = F.kl_div(curr_log, y_onehot[:batch_size,mid:end], reduction='sum') 
-
-
-                if tasknum > 0:
-                    prev = output[batch_size:batch_size+replay_size,start:mid]
-                    prev_log = F.log_softmax(prev, dim=1)
-                    loss_CE_prev = F.kl_div(prev_log, y_onehot[batch_size:batch_size+replay_size,start:mid], reduction='sum')
-
-                    loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size) * self.args.alpha
-                else:
-                    loss_CE = loss_CE_curr / batch_size * self.args.alpha
-
-            else:
-                loss_CE = F.kl_div(output_log, y_onehot[:batch_size,mid:end], reduction = 'batchmean')
-
-            if self.args.CI:
-                loss_CE += F.kl_div(output_log, uniform[:batch_size,mid:end] / (end-mid), 
-                                   reduction = 'batchmean') * self.args.beta
-            
-            if tasknum > 0 and self.args.uniform_penalty:
-                prev_uni = output[batch_size:batch_size+replay_size,mid:end]
-                
-                # confidence score
-                prev_out = self.model_fixed(data_r)[:,start:mid]
-                conf_score = F.softmax(prev_out,dim=1).max(dim=1)[1].unsqueeze(-1).float()
-                
-                prev_uni_log = F.log_softmax(prev_uni, dim=1)
-                loss_uni_prev = F.kl_div(prev_uni_log, conf_score*uniform[:replay_size,mid:end] / (end-mid), 
-                                         reduction = 'batchmean') * self.args.beta
-                
-                
-                loss_CE += loss_uni_prev
+            loss_BCE = F.binary_cross_entropy_with_logits(bin_out.squeeze(), binary_target)
             
             self.optimizer.zero_grad()
-            (loss_CE).backward()
+            (loss_BCE).backward()
             self.optimizer.step()
-
-    def add_model(self):
-        model = copy.deepcopy(self.model_single)
-        model.eval()
-        for param in model.parameters():
-            param.requires_grad = False
-        self.models.append(model)
-        print("Total Models %d"%len(self.models))
