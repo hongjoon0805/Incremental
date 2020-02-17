@@ -43,11 +43,11 @@ class CIFAR100(Dataset):
             ])
 
         train_dataset = datasets.CIFAR100("../../dat", train=True, transform=self.train_transform, download=True)
-        self.train_data = train_dataset.train_data
-        self.train_labels = train_dataset.train_labels
+        self.train_data = train_dataset.data
+        self.train_labels = train_dataset.targets
         test_dataset = datasets.CIFAR100("../../dat", train=False, transform=self.test_transform, download=True)
-        self.test_data = test_dataset.test_data
-        self.test_labels = test_dataset.test_labels
+        self.test_data = test_dataset.data
+        self.test_labels = test_dataset.targets
 
 class Imagenet(Dataset):
     def __init__(self):
@@ -89,7 +89,7 @@ class Imagenet(Dataset):
             self.test_data.append(path)
             self.test_labels.append(target)
         
-        self.train_data = np.vstack(self.train_data)
-        self.test_data = np.vstack(self.test_data)
+        self.train_data = np.stack(self.train_data, axis=0)
+        self.test_data = np.stack(self.test_data, axis=0)
             
 

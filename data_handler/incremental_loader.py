@@ -32,7 +32,6 @@ class IncrementalLoader(td.Dataset):
         self.loader = loader
         self.total_classes = classes
         
-        
         # Imagenet에서는 class shuffle 후 label < current_class 에서 argmin을 찾으면 length 출력 가능하다.
         
         self.step_size = step_size
@@ -157,7 +156,7 @@ class IncrementalLoader(td.Dataset):
         try:
             img = Image.fromarray(img)
         except:
-            img = self.loader(img[0])
+            img = self.loader(img)
         
         if self.transform is not None:
             img = self.transform(img)
@@ -189,7 +188,7 @@ class ResultLoader(td.Dataset):
         try:
             img = Image.fromarray(img)
         except:
-            img = self.loader(img[0])
+            img = self.loader(img)
             
         
         if self.transform is not None:
@@ -216,7 +215,6 @@ def make_ResultLoaders(data, labels, classes, step_size, transform = None, loade
         end_idx = np.argmax(labels>(end-1)) # end data index
         if end_idx == 0:
             end_idx = data.shape[0]
-                                 
         
         loaders.append(ResultLoader(data[start_idx:end_idx], labels[start_idx:end_idx], transform=transform, loader=loader))
         

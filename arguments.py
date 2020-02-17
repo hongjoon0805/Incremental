@@ -1,5 +1,5 @@
 import argparse
-
+# import deepspeed
 
 def get_args():
     parser = argparse.ArgumentParser(description='iCarl2.0')
@@ -25,11 +25,13 @@ def get_args():
     parser.add_argument('--step-size', type=int, default=100, help='How many classes to add in each increment')
     parser.add_argument('--memory-budget', type=int, default=20000,
                         help='How many images can we store at max. 0 will result in fine-tuning')
-    parser.add_argument('--epochs-class', type=int, default=100, help='Number of epochs for each increment')
+    parser.add_argument('--nepochs', type=int, default=100, help='Number of epochs for each increment')
     parser.add_argument('--base-classes', type=int, default=100, help='Number of base classes')
     parser.add_argument('--sample', type=int, default=10, help='Number of samples in BNN')
     parser.add_argument('--factor', type=int, default=4, help='Number of samples in BNN')
     parser.add_argument('--date', type=str, default='', help='(default=%(default)s)')
+    parser.add_argument('--cutmix', action='store_true', default=False, help='Use cutmix')
+    parser.add_argument('--KD', action='store_true', default=False, help='Use Knowledge distillation')
     parser.add_argument('--bin-sigmoid', action='store_true', default=False, help='Binary classification using sigmoid')
     parser.add_argument('--bin-softmax', action='store_true', default=False, help='Binary classification usign softmax')
     parser.add_argument('--prev-new', action='store_true', default=False, help='Use Prev/New head')
@@ -37,6 +39,7 @@ def get_args():
     parser.add_argument('--uniform-penalty', action='store_true', default=False, help='Use uniform penalty')
     parser.add_argument('--CI', action='store_true', default=False, help='Use Confidence Integrated loss')
     parser.add_argument('--rand-init', action='store_true', default=False, help='Use random init')
+    parser.add_argument('--local_rank', type=int, default=-1,help='local rank passed from distributed launcher')
     parser.add_argument('--dataset', default='', type=str, required=True,
                         choices=['CIFAR100', 
                                  'Imagenet'], 
@@ -54,15 +57,15 @@ def get_args():
                                  'ood',
                                  'bin_finetune'], 
                         help='(default=%(default)s)')
-    parser.add_argument('--option', default='', type=str, required=True,
-                        choices=['er', 
-                                 'coreset'], 
-                        help='(default=%(default)s)')
+
     parser.add_argument('--strategy', default='RingBuffer', type=str, required=False,
                         choices=['Reservior', 
                                  'RingBuffer',
                                  'Weighted'], 
                         help='(default=%(default)s)')
     
-    args = parser.parse_args()
+    
+#     parser = deepspeed.add_config_arguments(parser)
+    args=parser.parse_args()
+
     return args

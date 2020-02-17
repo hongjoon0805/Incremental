@@ -15,37 +15,16 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 import networks
+import trainer
 
-class GenericTrainer:
-    '''
-    Base class for trainer; to implement a new training routine, inherit from this. 
-    '''
-
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
-        self.train_data_iterator = trainDataIterator
-        self.test_data_iterator = testDataIterator
-        self.model = model
-        self.args = args
-        self.dataset = dataset
-        self.train_loader = self.train_data_iterator.dataset
-        self.older_classes = []
-        self.optimizer = optimizer
-        self.model_fixed = copy.deepcopy(self.model)
-        self.active_classes = []
-        for param in self.model_fixed.parameters():
-            param.requires_grad = False
-        self.models = []
-        self.current_lr = args.lr
-        self.all_classes = list(range(dataset.classes))
-        self.all_classes.sort(reverse=True)
-        self.ce=torch.nn.CrossEntropyLoss()
-        self.model_single = copy.deepcopy(self.model)
-        self.optimizer_single = None
-
-
-class Trainer(GenericTrainer):
+class Trainer(trainer.GenericTrainer):
     def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
         super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
+        
+        if self.args.cutmix:
+            self.loss = trainer.CutMixCriterion('mean')
+        else:
+            self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
 
     def update_lr(self, epoch, schedule):
         for temp in range(0, len(schedule)):
@@ -76,51 +55,44 @@ class Trainer(GenericTrainer):
         self.model_fixed.eval()
         for param in self.model_fixed.parameters():
             param.requires_grad = False
-        self.models.append(self.model_fixed)
-
-    def get_model(self):
-        myModel = networks.ModelFactory.get_model(self.args.dataset).cuda()
-        optimizer = torch.optim.SGD(myModel.parameters(), self.args.lr, momentum=self.args.momentum,
-                                    weight_decay=self.args.decay, nesterov=True)
-        myModel.eval()
-
-        self.current_lr = self.args.lr
-
-        self.model_single = myModel
-        self.optimizer_single = optimizer
 
     def train(self, epoch):
-        
-        T=2
         
         self.model.train()
         print("Epochs %d"%epoch)
         
         tasknum = self.train_data_iterator.dataset.t
-        start = 0
         end = self.train_data_iterator.dataset.end
-        mid = end-self.args.step_size
         
         for data, target in tqdm(self.train_data_iterator):
-            data, target = data.cuda(), target.cuda()
-            
-            y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
-
-            y_onehot.zero_()
-            y_onehot.scatter_(1, target.unsqueeze(1), 1)
+            data = data.cuda()
+            if self.args.cutmix:
+                target1, target2, lamb = target
+                target1, target2 = target1.cuda(), target2.cuda()
+                target = (target1, target2, lamb)
+            else:
+                target = target.cuda()
             
             output = self.model(data)
-            output_log = F.log_softmax(output[:,:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[:,:end], reduction='batchmean')
+            loss_CE = self.loss(output[:,:end], target)
+            
+            loss_KD = 0
+            if tasknum > 0 and self.args.KD:
+                T=2
+                score = self.model_fixed(data).data
+                loss_KD = torch.zeros(tasknum-1).cuda()
+                for t in range(tasknum):
+                    
+                    # local distillation
+                    KD_start = (t) * self.args.step_size
+                    KD_end = (t+1) * self.args.step_size
+
+                    soft_target = F.softmax(score[:,KD_start:KD_end] / T, dim=1)
+                    output_log = F.log_softmax(output[:,KD_start:KD_end] / T, dim=1)
+                    loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2)
+                
+                loss_KD = loss_KD.sum()
             
             self.optimizer.zero_grad()
             (loss_CE).backward()
             self.optimizer.step()
-
-    def add_model(self):
-        model = copy.deepcopy(self.model_single)
-        model.eval()
-        for param in model.parameters():
-            param.requires_grad = False
-        self.models.append(model)
-        print("Total Models %d"%len(self.models))
