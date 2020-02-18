@@ -24,6 +24,8 @@ class TrainerFactory():
             import trainer.GDA as trainer
         elif args.trainer == 'coreset':
             import trainer.coreset as trainer
+        elif args.trainer == 'icarl':
+            import trainer.icarl as trainer
         elif args.trainer == 'ood':
             import trainer.ood as trainer
         elif args.trainer == 'bin_finetune':

@@ -80,7 +80,7 @@ class Trainer(trainer.GenericTrainer):
             if tasknum > 0 and self.args.KD:
                 T=2
                 score = self.model_fixed(data).data
-                loss_KD = torch.zeros(tasknum-1).cuda()
+                loss_KD = []
                 for t in range(tasknum):
                     
                     # local distillation
@@ -89,9 +89,9 @@ class Trainer(trainer.GenericTrainer):
 
                     soft_target = F.softmax(score[:,KD_start:KD_end] / T, dim=1)
                     output_log = F.log_softmax(output[:,KD_start:KD_end] / T, dim=1)
-                    loss_KD[t] = F.kl_div(output_log, soft_target) * (T**2)
+                    loss_KD.append(F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2))
                 
-                loss_KD = loss_KD.sum()
+                loss_KD = sum(loss_KD) / len(loss_KD)
             
             self.optimizer.zero_grad()
             (loss_CE).backward()

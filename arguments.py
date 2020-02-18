@@ -26,11 +26,14 @@ def get_args():
     parser.add_argument('--memory-budget', type=int, default=20000,
                         help='How many images can we store at max. 0 will result in fine-tuning')
     parser.add_argument('--nepochs', type=int, default=100, help='Number of epochs for each increment')
+    parser.add_argument('--workers', type=int, default=32, help='Number of workers in Dataloaders')
     parser.add_argument('--base-classes', type=int, default=100, help='Number of base classes')
     parser.add_argument('--sample', type=int, default=10, help='Number of samples in BNN')
     parser.add_argument('--factor', type=int, default=4, help='Number of samples in BNN')
     parser.add_argument('--date', type=str, default='', help='(default=%(default)s)')
     parser.add_argument('--cutmix', action='store_true', default=False, help='Use cutmix')
+    parser.add_argument('--debug', type=int, default=1, help='Use debug')
+    parser.add_argument('--benchmark', action='store_true', default=False, help='Use cudnn.benchmark')
     parser.add_argument('--KD', action='store_true', default=False, help='Use Knowledge distillation')
     parser.add_argument('--bin-sigmoid', action='store_true', default=False, help='Binary classification using sigmoid')
     parser.add_argument('--bin-softmax', action='store_true', default=False, help='Binary classification usign softmax')
@@ -55,7 +58,8 @@ def get_args():
                                  'gda',
                                  'coreset',
                                  'ood',
-                                 'bin_finetune'], 
+                                 'bin_finetune',
+                                 'icarl'], 
                         help='(default=%(default)s)')
 
     parser.add_argument('--strategy', default='RingBuffer', type=str, required=False,

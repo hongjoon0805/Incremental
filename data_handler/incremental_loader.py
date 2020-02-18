@@ -60,14 +60,6 @@ class IncrementalLoader(td.Dataset):
         for i in range(classes):
             self.start_point.append(np.argmin(self.labelsNormal<i))
         
-        self.transformLabels()
-
-    def transformLabels(self):
-        '''Change labels to one hot coded vectors'''
-        b = np.zeros((self.labels.size, self.labels.max() + 1))
-        b[np.arange(self.labels.size), self.labels] = 1
-        self.labels = b
-        
     def task_change(self):
         self.t += 1
         
@@ -87,56 +79,16 @@ class IncrementalLoader(td.Dataset):
         
     def update_exemplar(self):
         
-        if self.strategy == 'Reservior':
-            self.Reservior()
-        elif self.strategy == 'RingBuffer':
+        if self.strategy == 'RingBuffer':
             self.RingBuffer()
-        elif self.strategy == 'Weighted':
-            self.Weighted()
             
-#         exemplar_per_classes = np.zeros(self.total_classes)
-#         for idx in self.exemplar:
-#             exemplar_per_classes[idx//500] += 1
-#         print(exemplar_per_classes)
-
-    def Reservior(self):
-        j = 0
-        for idx in range(self.start_idx, self.end_idx):
-            if len(self.exemplar) < self.mem_sz:
-                self.exemplar.append(idx)
-            else:
-                i = np.random.randint(self.end_idx+j)
-                if i < self.mem_sz:
-                    self.exemplar[i] = idx
-            j += 1
-    
     def RingBuffer(self):
         buffer_per_class = self.mem_sz // self.end
         self.exemplar = []
         for i in range(self.end):
             start = self.start_point[i]
             self.exemplar += range(start,start+buffer_per_class)
-    
-    def Weighted(self):
-        start = 0
-        end = self.base_classes
-        weight_sum = 0
-        for t in reversed(range(1,self.t+2)):
-            weight_sum += (end-start)*t
-            start = end
-            end += self.step_size
-        
-        k = self.mem_sz // weight_sum
-        base = self.base_classes
-        weight = self.t+1
-        self.exemplar = []
-        for i in range(self.end):
-            start = self.start_point[i]
-            if i> base:
-                base += self.step_size
-                weight = weight-1
-            self.exemplar += range(start, start+weight*k)
-    
+            
     def __len__(self):
         if self.mode == 'train':
             return self.len
@@ -190,7 +142,6 @@ class ResultLoader(td.Dataset):
         except:
             img = self.loader(img)
             
-        
         if self.transform is not None:
             img = self.transform(img)
 

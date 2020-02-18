@@ -1,7 +1,6 @@
 import argparse
 
 import torch
-torch.backends.cudnn.benchmark=True
 import torch.utils.data as td
 import numpy as np
 import scipy.io as sio
@@ -57,6 +56,8 @@ if args.bin_sigmoid:
 if args.bin_softmax:
     log_name += '_bin_softmax'
 
+if args.benchmark:
+    torch.backends.cudnn.benchmark=True
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
 
 if args.dataset == 'CIFAR100':
@@ -91,6 +92,21 @@ train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
                                                       approach = args.trainer
                                                       )
 
+evaluate_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
+                                                         dataset.train_labels,
+                                                         dataset.classes,
+                                                         args.step_size,
+                                                         args.memory_budget,
+                                                         'train',
+                                                         args.batch_size,
+                                                         transform=dataset.train_transform,
+                                                         loader=loader,
+                                                         shuffle_idx = shuffle_idx,
+                                                         base_classes = args.base_classes,
+                                                         strategy = args.strategy,
+                                                         approach = 'coreset'
+                                                        )
+
 # Loader for test data.
 test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
                                                      dataset.test_labels,
@@ -107,8 +123,6 @@ test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
                                                      approach = args.trainer
                                                      )
 
-kwargs = {'num_workers': 32, 'pin_memory': True}
-# kwargs = {'num_workers': 0, 'pin_memory': False}
 
 result_dataset_loaders = data_handler.make_ResultLoaders(dataset.test_data,
                                                          dataset.test_labels,
@@ -121,17 +135,11 @@ result_dataset_loaders = data_handler.make_ResultLoaders(dataset.test_data,
                                                         )
 
 # Iterator to iterate over training data.
-
-if args.cutmix:
-    collator = trainer.CutMixCollator(1)
-else:
-    collator = torch.utils.data.dataloader.default_collate
-
+kwargs = {'num_workers': args.workers, 'pin_memory': True}
 train_iterator = torch.utils.data.DataLoader(train_dataset_loader,
-                                             batch_size=args.batch_size, shuffle=True, 
-                                             collate_fn=collator, drop_last=True, **kwargs)
+                                             batch_size=args.batch_size, shuffle=True, drop_last=True, **kwargs)
 
-evaluator_iterator = torch.utils.data.DataLoader(train_dataset_loader,
+evaluator_iterator = torch.utils.data.DataLoader(evaluate_dataset_loader,
                                              batch_size=args.batch_size, shuffle=True,  drop_last=True, **kwargs)
 
 # Iterator to iterate over test data
@@ -149,18 +157,21 @@ myModel = torch.nn.DataParallel(myModel).cuda()
 optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
                             weight_decay=args.decay, nesterov=True)
 
-# myModel, optimizer, train_iterator, __ = deepspeed.initialize(args=args, model=myModel, model_parameters=myModel.parameters(), training_data=train_dataset_loader)
 # Trainer object used for training
 myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
 
 
 # Initilize the evaluators used to measure the performance of the system.
 
-t_classifier = trainer.EvaluatorFactory.get_evaluator("trainedClassifier")
-if args.trainer == 'gda':
-    gda_classifier = trainer.EvaluatorFactory.get_evaluator("generativeClassifier")
-    results_gda = np.zeros(dataset.classes // args.step_size)
+if args.trainer == 'coreset_NMC' or args.trainer == 'er_NMC' or args.trainer == 'icarl':
+    testType = "generativeClassifier"
+elif args.trainer == 'IL2M':
+    testType = 'IL2M'
+else:
+    testType = 'trainedClassifier'
+    
 
+t_classifier = trainer.EvaluatorFactory.get_evaluator(testType)
 
 # Loop that incrementally adds more and more classes
 
@@ -180,17 +191,20 @@ for head in ['all', 'prev_new', 'task', 'cheat']:
     results[head]['correct_5'] = []
     results[head]['stat'] = []
     
-results['bin_target'] = []
-results['bin_prob'] = []
-results['sigmoid'] = []
-results['auroc'] = []
 results['task_soft_1'] = np.zeros((tasknum, tasknum))
 results['task_soft_5'] = np.zeros((tasknum, tasknum))
 
 for t in range((dataset.classes-args.base_classes)//args.step_size+1):
-
+    
+    if args.trainer == 'IL2M' or args.trainer == 'coreset_NMC':
+        model_name = 'models/trained_model/RESULT_{}_coreset_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_4_RingBuffer_CE_lr_change_task_{}.pt'.format(self.args.dataset, self.args.seed, self.args.memory_budget, self.args.base_classes, t)
+        myTrainer.model.load_state_dict(torch.load(model_name))
+        
+    elif args.trainer == 'er_NMC':
+        model_name = 'models/trained_model/RESULT_{}_er_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_5_RingBuffer_CE_lr_change_task_{}.pt'.format(self.args.dataset, self.args.seed, self.args.memory_budget, self.args.base_classes, t)
+        myTrainer.model.load_state_dict(torch.load(model_name))
+    
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
-    print(len(train_dataset_loader.exemplar))
     # Add new classes to the train, and test iterator
     lr = args.lr
     if args.lr_change:
@@ -199,55 +213,41 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     if t==1:
         total_epochs = args.nepochs // args.factor
         schedule = schedule // args.factor
-#     if t==4:
-#         break
     
-    if args.trainer == 'ood' and args.rand_init:
-        myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
     
     # Running nepochs epochs
     for epoch in range(0, total_epochs):
         myTrainer.update_lr(epoch, schedule)
-        myTrainer.train(epoch)
-        # print(my_trainer.threshold)
-        if epoch % 5 == (5 - 1):
+        if args.trainer == 'IL2M' or args.trainer == 'coreset_NMC' or args.trainer == 'er_NMC':
+            break
+        else:
+            myTrainer.train(epoch)
+            
+        
+        if epoch % 5 == (5 - 1) and args.debug:
+            if args.trainer == 'icarl':
+                t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
             
             if t>0:
-                
-                train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, train_start, train_end)
+                train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
                 print("*********CURRENT EPOCH********** : %d"%epoch)
                 print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
                 print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
 
-                correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
-                                                                                       test_start, test_end, 
-                                                                                       mode='test', step_size=args.step_size)
+                correct, correct_5, stat = t_classifier.evaluate(myTrainer.model, test_iterator,
+                                                                 test_start, test_end, 
+                                                                 mode='test', step_size=args.step_size)
 
-                auroc = roc_auc_score(bin_target, bin_prob)
 
                 print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
                 print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
                 print("Test Classifier top-1 (Softmax, prev_new): %0.2f"%correct['prev_new'])
                 print("Test Classifier top-5 (Softmax, prev_new): %0.2f"%correct_5['prev_new'])
-                print("Test Classifier top-1 (Softmax, task): %0.2f"%correct['task'])
-                print("Test Classifier top-5 (Softmax, task): %0.2f"%correct_5['task'])
-                print("Test Classifier top-1 (Softmax, cheat): %0.2f"%correct['cheat'])
-                print("Test Classifier top-5 (Softmax, cheat): %0.2f"%correct_5['cheat'])
-                print("Test Classifier (Binary Classification): %0.2f"%correct['bin'])
-                print("Test Classifier (AUROC): %0.2f"%auroc)
-                for head in ['all', 'prev_new', 'task']:
-                    print('Test stat for %s'%head)
-                    print('cp: %d'%stat[head][0])
-                    print('epp: %d'%stat[head][1])
-                    print('epn: %d'%stat[head][2])
-                    print('cn: %d'%stat[head][3])
-                    print('enn: %d'%stat[head][4])
-                    print('enp: %d'%stat[head][5])
-                    print('total: %d'%stat[head][6])
+                
             else:
-                train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, train_start, train_end)
+                train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
                 print("*********CURRENT EPOCH********** : %d"%epoch)
                 print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
                 print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
@@ -256,47 +256,30 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
                 print("Test Classifier top-1 (Softmax): %0.2f"%test_1)
                 print("Test Classifier top-5 (Softmax): %0.2f"%test_5)
             
-
     
     # Evaluate the learned classifier
-    
-    # t-SNE visualization tool 짜놓기
-    # CutMix로 data 저장하는 
-    
+    if args.trainer == 'icarl' or args.trainer == 'coreset_NMC' or args.trainer == 'er_NMC':
+        t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
     
     
     if t>0:
             
-        train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator,train_start, train_end)
+        train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
         print("*********CURRENT EPOCH********** : %d"%epoch)
         print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
         print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
 
-        correct, correct_5, stat, bin_target, bin_prob = t_classifier.evaluate(myTrainer.model, test_iterator,
-                                                                                       test_start, test_end, 
-                                                                                       mode='test', step_size=args.step_size)
+        correct, correct_5, stat = t_classifier.evaluate(myTrainer.model, test_iterator,
+                                                         test_start, test_end, 
+                                                         mode='test', step_size=args.step_size)
 
-        auroc = roc_auc_score(bin_target, bin_prob)
 
         print("Test Classifier top-1 (Softmax, all): %0.2f"%correct['all'])
         print("Test Classifier top-5 (Softmax, all): %0.2f"%correct_5['all'])
         print("Test Classifier top-1 (Softmax, prev_new): %0.2f"%correct['prev_new'])
         print("Test Classifier top-5 (Softmax, prev_new): %0.2f"%correct_5['prev_new'])
-        print("Test Classifier top-1 (Softmax, task): %0.2f"%correct['task'])
-        print("Test Classifier top-5 (Softmax, task): %0.2f"%correct_5['task'])
-        print("Test Classifier top-1 (Softmax, cheat): %0.2f"%correct['cheat'])
-        print("Test Classifier top-5 (Softmax, cheat): %0.2f"%correct_5['cheat'])
-        print("Test Classifier Final(Binary Classification): %0.2f"%correct['bin'])
-        print("Test Classifier Final(AUROC): %0.2f"%auroc)
+        
         for head in ['all', 'prev_new', 'task']:
-            print('Test stat Final for %s'%head)
-            print('cp: %d'%stat[head][0])
-            print('epp: %d'%stat[head][1])
-            print('epn: %d'%stat[head][2])
-            print('cn: %d'%stat[head][3])
-            print('enn: %d'%stat[head][4])
-            print('enp: %d'%stat[head][5])
-            print('total: %d'%stat[head][6])
 
             results[head]['correct'].append(correct[head])
             results[head]['correct_5'].append(correct_5[head])
@@ -305,10 +288,6 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
 
         results['cheat']['correct'].append(correct['cheat'])
         results['cheat']['correct_5'].append(correct_5['cheat'])
-        results['sigmoid'].append(correct['bin'])
-        results['auroc'].append(auroc)
-        results['bin_target'].append(bin_target)
-        results['bin_prob'].append(bin_prob)
         
     else:
         train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, train_start, train_end)
@@ -329,32 +308,20 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         dataset_loader = result_dataset_loaders[i]
         iterator = torch.utils.data.DataLoader(dataset_loader,
                                                batch_size=args.batch_size, **kwargs)
+        print(start, end)
         results['task_soft_1'][t][i], results['task_soft_5'][t][i] = t_classifier.evaluate(myTrainer.model, iterator, start, end)
         start = end
         end += args.step_size
     
     sio.savemat('./result_data/'+log_name+'.mat',results)
     
-    if args.trainer == 'gda':
-        gda_classifier.update_moments(myTrainer.model, train_iterator, args.step_size)
-        TestError_gda = gda_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
-        print("Test Classifier Final(GDA): %0.2f"%TestError_gda)
-        results_gda[t] = TestError_gda
-        np.savetxt('./result_data/'+log_name+'_GDA.txt', results_gda, '%.4f')
-    
     myTrainer.increment_classes()
+    evaluate_dataset_loader.update_exemplar()
+    evaluate_dataset_loader.task_change()
+    
     train_end = train_end + args.step_size
     test_end = test_end + args.step_size
     if args.trainer == 'er':
         train_start = train_end - args.step_size
-    torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
-
-
-#             if args.trainer == 'gda':
-
-#                 gda_classifier.update_moment(myTrainer.model, train_iterator, args.step_size)
-#                 TrainError_gda = gda_classifier.evaluate(myTrainer.model, train_iterator, t, args.step_size, 'train')
-#                 TestError_gda = gda_classifier.evaluate(myTrainer.model, test_iterator, t, args.step_size, 'test')
-
-#                 print("Train Classifier (GDA): %0.2f"%TrainError_gda)
-#                 print("Test Classifier (GDA): %0.2f"%TestError_gda)
+    if args.trainer == 'er' or args.trainer == 'coreset':
+        torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))

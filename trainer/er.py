@@ -68,7 +68,7 @@ class Trainer(trainer.GenericTrainer):
         start = 0
         end = self.train_data_iterator.dataset.end
         mid = end-self.args.step_size
-        kwargs = {'num_workers': 32, 'pin_memory': True}
+        kwargs = {'num_workers': self.args.workers, 'pin_memory': True}
         if self.args.cutmix:
             collator = trainer.CutMixCollator(1)
         else:
@@ -153,7 +153,7 @@ class Trainer(trainer.GenericTrainer):
                     
                     loss_KD.append(F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2))
                 
-                loss_KD = sum(loss_KD)
+                loss_KD = sum(loss_KD) / len(loss_KD)
 
             self.optimizer.zero_grad()
             (loss_CE + loss_KD).backward()

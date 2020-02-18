@@ -51,8 +51,6 @@ class BasicBlock(nn.Module):
 
         return out
 
-
-
 class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
@@ -131,7 +129,7 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x, bc = False):
+    def forward(self, x, bc = False, feature_return=False):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -144,10 +142,13 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
+        feature = x / torch.norm(x, 2, 1).unsqueeze(1)
         bx = self.binary_fc(x)
         x = self.fc(x)
         if bc:
             return x, bx
+        if feature_return:
+            return x, feature
         return x
 
 

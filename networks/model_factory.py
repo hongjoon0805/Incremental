@@ -14,8 +14,8 @@ class ModelFactory():
                 import networks.resnet32_gda as res
                 return res.resnet32(100, ratio)
             else:
-                import networks.resnet32 as res
-                return res.resnet32(100)
+                import networks.resnet18 as res
+                return res.resnet18(100)
         elif dataset == 'Imagenet':
             if trainer == 'bayes':
                 import networks.resnet18_ucl as res
