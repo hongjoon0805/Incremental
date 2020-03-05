@@ -7,19 +7,26 @@ class ModelFactory():
     def get_model(dataset, ratio, trainer):
         
         if dataset == 'CIFAR100':
-            if trainer == 'bayes':
-                import networks.resnet32_ucl as res
-                return res.resnet32(100, ratio)
-            elif trainer == 'gda':
-                import networks.resnet32_gda as res
-                return res.resnet32(100, ratio)
-            else:
-                import networks.resnet18 as res
-                return res.resnet18(100)
-        elif dataset == 'Imagenet':
-            if trainer == 'bayes':
-                import networks.resnet18_ucl as res
-                return res.resnet18(1000, ratio)
-            else:
-                import networks.resnet18 as res
-                return res.resnet18(1000)
+            
+            import networks.resnet18 as res
+            return res.resnet18(100)
+        
+        if dataset == 'CIFAR10':
+            
+            import networks.resnet18 as res
+            return res.resnet18(10)
+        
+        elif dataset == 'Imagenet' or dataset == 'VggFace2_1K' or dataset == 'Google_Landmark_v2_1K':
+            
+            import networks.resnet18 as res
+            return res.resnet18(1000)
+        
+        elif dataset == 'VggFace2_5K':\
+            
+            import networks.resnet18 as res
+            return res.resnet18(5000)
+        
+        elif dataset == 'Google_Landmark_v2_10K':
+            
+            import networks.resnet18 as res
+            return res.resnet18(10000)

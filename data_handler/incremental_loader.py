@@ -6,6 +6,8 @@
 
 import copy
 import logging
+import time
+import cv2
 
 import numpy as np
 import torch
@@ -74,7 +76,7 @@ class IncrementalLoader(td.Dataset):
         self.len = self.end_idx - self.start_idx
         self.current_len = self.len
         
-        if self.approach == 'coreset':
+        if self.approach == 'coreset' or self.approach == 'icarl':
             self.len += len(self.exemplar)
         
     def update_exemplar(self):
@@ -98,7 +100,7 @@ class IncrementalLoader(td.Dataset):
     def __getitem__(self, index):
         
         if self.mode == 'train':
-            if self.approach == 'coreset' and index >= self.current_len:
+            if (self.approach == 'coreset' or self.approach == 'icarl') and index >= self.current_len:
                 index = self.exemplar[index - self.current_len]
             else:
                 index = self.start_idx + index

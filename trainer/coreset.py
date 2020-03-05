@@ -21,10 +21,7 @@ class Trainer(trainer.GenericTrainer):
     def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
         super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
         
-        if self.args.cutmix:
-            self.loss = trainer.CutMixCriterion('mean')
-        else:
-            self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
+        self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
 
     def update_lr(self, epoch, schedule):
         for temp in range(0, len(schedule)):
@@ -63,35 +60,30 @@ class Trainer(trainer.GenericTrainer):
         
         tasknum = self.train_data_iterator.dataset.t
         end = self.train_data_iterator.dataset.end
+        mid = end - self.args.step_size
         
         for data, target in tqdm(self.train_data_iterator):
-            data = data.cuda()
-            if self.args.cutmix:
-                target1, target2, lamb = target
-                target1, target2 = target1.cuda(), target2.cuda()
-                target = (target1, target2, lamb)
-            else:
-                target = target.cuda()
+            data, target = data.cuda(), target.cuda()
             
             output = self.model(data)
-            loss_CE = self.loss(output[:,:end], target)
             
-            loss_KD = 0
-            if tasknum > 0 and self.args.KD:
-                T=2
-                score = self.model_fixed(data).data
-                loss_KD = []
-                for t in range(tasknum):
-                    
-                    # local distillation
-                    KD_start = (t) * self.args.step_size
-                    KD_end = (t+1) * self.args.step_size
-
-                    soft_target = F.softmax(score[:,KD_start:KD_end] / T, dim=1)
-                    output_log = F.log_softmax(output[:,KD_start:KD_end] / T, dim=1)
-                    loss_KD.append(F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2))
+            if tasknum > 0 and self.args.prev_new:
+                loss_CE_curr = 0
+                loss_CE_prev = 0
+                curr_mask = target >= mid
+                prev_mask = target < mid
+                curr_num = (curr_mask).sum().int()
+                prev_num = (prev_mask).sum().int()
+                batch_size = curr_num + prev_num
                 
-                loss_KD = sum(loss_KD) / len(loss_KD)
+                loss_CE_curr = self.loss(output[curr_mask,mid:end], target[curr_mask]%(end-mid)) * curr_num
+                loss_CE_prev = 0
+                if prev_num > 0:
+                    loss_CE_prev = self.loss(output[prev_mask,:mid], target[prev_mask]) * prev_num
+                loss_CE = (loss_CE_curr + loss_CE_prev) / batch_size
+
+            else:
+                loss_CE = self.loss(output[:,:end], target)
             
             self.optimizer.zero_grad()
             (loss_CE).backward()

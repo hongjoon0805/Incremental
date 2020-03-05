@@ -11,6 +11,47 @@ import numpy as np
 # To incdude a new Dataset, inherit from Dataset and add all the Dataset specific parameters here.
 # Goal : Remove any data specific parameters from the rest of the code
 
+def make_dataset(file_path, classes, test_img_per_class = 50):
+    data = datasets.ImageFolder(file_path)
+    loader = data.loader
+
+    img_cnt = np.zeros(20000)
+    img_mask = np.zeros(20000)
+    target_map = np.zeros(20000)
+
+    for i in range(len(data.imgs)):
+        path, target = data.imgs[i]
+        img_cnt[target] += 1
+
+    idx = classes
+    img_cnt_args = np.flip(np.argsort(img_cnt), axis=0)[:idx]
+    img_mask[img_cnt_args] = 1
+    target_map[img_cnt_args] = np.arange(idx)
+
+    train_data = []
+    train_labels = []
+    test_data = []
+    test_labels = []
+    img_cnt = np.zeros(20000)
+    for i in range(len(data.imgs)):
+        path, target = data.imgs[i]
+        if img_mask[target] == 0:
+            continue
+        if img_cnt[target] < test_img_per_class:
+            test_data.append(path)
+            test_labels.append(int(target_map[target]))
+        else:
+            train_data.append(path)
+            train_labels.append(int(target_map[target]))
+
+        img_cnt[target] += 1
+
+
+    train_data = np.stack(train_data, axis=0)
+    test_data = np.stack(test_data, axis=0)
+    
+    return train_data, train_labels, test_data, test_labels, loader
+
 class Dataset():
     '''
     Base class to reprenent a Dataset
@@ -22,6 +63,32 @@ class Dataset():
         self.train_data = None
         self.test_data = None
 
+
+class CIFAR10(Dataset):
+    def __init__(self):
+        super().__init__(10, "CIFAR10")
+
+        mean=[x/255 for x in [125.3,123.0,113.9]]
+        std=[x/255 for x in [63.0,62.1,66.7]]
+
+        self.train_transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ])
+
+        self.test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+            ])
+
+        train_dataset = datasets.CIFAR10("../../dat", train=True, transform=self.train_transform, download=True)
+        self.train_data = train_dataset.train_data
+        self.train_labels = np.array(train_dataset.train_labels)
+        test_dataset = datasets.CIFAR10("../../dat", train=False, transform=self.test_transform, download=True)
+        self.test_data = test_dataset.test_data
+        self.test_labels = np.array(test_dataset.test_labels)        
 
 class CIFAR100(Dataset):
     def __init__(self):
@@ -48,11 +115,6 @@ class CIFAR100(Dataset):
         test_dataset = datasets.CIFAR100("../../dat", train=False, transform=self.test_transform, download=True)
         self.test_data = test_dataset.test_data
         self.test_labels = np.array(test_dataset.test_labels)
-        
-        print(self.train_data.shape)
-        print(self.train_labels.shape)
-        print(self.test_data.shape)
-        print(self.test_labels.shape)
 
 class Imagenet(Dataset):
     def __init__(self):
@@ -97,4 +159,100 @@ class Imagenet(Dataset):
         self.train_data = np.stack(self.train_data, axis=0)
         self.test_data = np.stack(self.test_data, axis=0)
             
+        
+class VggFace2_1K(Dataset):
+    def __init__(self):
+        super().__init__(1000, "VggFace2_1K")
+        
+        self.train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+        
+        self.test_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            ])
+        
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../../dat/vggface2/train", self.classes)
+        
+        self.train_data = train_data
+        self.train_labels = train_labels
+        self.test_data = test_data
+        self.test_labels = test_labels
+        self.loader = loader
 
+        
+class VggFace2_5K(Dataset):
+    def __init__(self):
+        super().__init__(5000, "VggFace2_5K")
+        
+        self.train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+        
+        self.test_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            ])
+        
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../../dat/vggface2/train", self.classes)
+        
+        self.train_data = train_data
+        self.train_labels = train_labels
+        self.test_data = test_data
+        self.test_labels = test_labels
+        self.loader = loader
+        
+class Google_Landmark_v2_1K(Dataset):
+    def __init__(self):
+        super().__init__(1000, "Google_Landmark_v2_1K")
+        
+        self.train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+        
+        self.test_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            ])
+        
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../../dat/google-landmark-v2/train_10k", self.classes)
+        
+        self.train_data = train_data
+        self.train_labels = train_labels
+        self.test_data = test_data
+        self.test_labels = test_labels
+        self.loader = loader
+        
+class Google_Landmark_v2_10K(Dataset):
+    def __init__(self):
+        super().__init__(10000, "Google_Landmark_v2_10K")
+        
+        self.train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+        
+        self.test_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            ])
+        
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../../dat/google-landmark-v2/train_10k", self.classes, test_img_per_class=10)
+        
+        self.train_data = train_data
+        self.train_labels = train_labels
+        self.test_data = test_data
+        self.test_labels = test_labels
+        self.loader = loader

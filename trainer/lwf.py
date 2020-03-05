@@ -133,14 +133,6 @@ class Trainer(GenericTrainer):
                 
                 loss_KD = loss_KD.sum()
                 
-                # global distillation
-#                 start = 0
-#                 end = (tasknum) * self.args.step_size
-                
-#                 soft_target = F.softmax(score[:,start:end] / T, dim=1)
-#                 output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-#                 loss_KD = loss_KD + F.kl_div(output_log, soft_target) * (T**2) * self.args.alpha
-                
             self.optimizer.zero_grad()
             (loss_KD + loss_CE).backward()
             self.optimizer.step()

@@ -69,14 +69,11 @@ class Trainer(trainer.GenericTrainer):
         end = self.train_data_iterator.dataset.end
         mid = end-self.args.step_size
         kwargs = {'num_workers': self.args.workers, 'pin_memory': True}
-        if self.args.cutmix:
-            collator = trainer.CutMixCollator(1)
-        else:
-            collator = torch.utils.data.dataloader.default_collate
+        
         exemplar_dataset_loaders = trainer.ExemplarLoader(self.train_data_iterator.dataset)
         exemplar_iterator = torch.utils.data.DataLoader(exemplar_dataset_loaders,
                                                         batch_size=self.args.replay_batch_size, 
-                                                        shuffle=True, collate_fn=collator, drop_last=True, **kwargs)
+                                                        shuffle=True, drop_last=True, **kwargs)
         
         
         if tasknum > 0:
@@ -89,53 +86,51 @@ class Trainer(trainer.GenericTrainer):
                 curr, prev = samples
                 
                 data, target = curr
-                target = target%(end-mid)
+                if self.args.ablation == 'None':
+                    target = target%(end-mid)
                 batch_size = data.shape[0]
                 data_r, target_r = prev
                 replay_size = data_r.shape[0]
                 data, data_r = data.cuda(), data_r.cuda()
                 data = torch.cat((data,data_r))
-                
-                if self.args.cutmix:
-                    target1, target2, lamb = target
-                    target1, target2 = target1%(end-mid), target2%(end-mid)
-                    target1, target2 = target1.cuda(), target2.cuda()
-                    target = (target1, target2, lamb)
-                    
-                    target1_r, target2_r, lamb = target_r
-                    target1_r, target2_r = target1_r.cuda(), target2_r.cuda()
-                    target_r = (target1_r, target2_r, lamb)
-                else:
-                    target, target_r = target.cuda(), target_r.cuda()
+                target, target_r = target.cuda(), target_r.cuda()
                 
             else:
                 data, target = samples
                 data = data.cuda()
-                if self.args.cutmix:
-                    target1, target2, lamb = target
-                    target1, target2 = target1%(end-mid), target2%(end-mid)
-                    target1, target2 = target1.cuda(), target2.cuda()
-                    target = (target1, target2, lamb)
-                else:
-                    target = target.cuda()
-            
+                target = target.cuda()
+                    
                 batch_size = data.shape[0]
             
             output = self.model(data)
             
-            loss_CE_curr = 0
-            loss_CE_prev = 0
+            if self.args.ablation == 'naive':
+                target = torch.cat((target, target_r))
+                
+#                 y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
 
-            curr = output[:batch_size,mid:end]
-            loss_CE_curr = self.loss(curr, target)
+#                 y_onehot.zero_()
+#                 y_onehot.scatter_(1, target.unsqueeze(1), 1)
+#                 output_log = F.log_softmax(output[:,start:end], dim=1)
+#                 loss_CE = F.kl_div(output_log, y_onehot[:,start:end], reduction='batchmean')
+                
+                loss_CE = self.loss(output[:,:end],target) / (batch_size + replay_size)
             
-            if tasknum > 0:
-                prev = output[batch_size:batch_size+replay_size,start:mid]
-                loss_CE_prev = self.loss(prev, target_r)
-                loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size)
-
             else:
-                loss_CE = loss_CE_curr / batch_size
+            
+                loss_CE_curr = 0
+                loss_CE_prev = 0
+
+                curr = output[:batch_size,mid:end]
+                loss_CE_curr = self.loss(curr, target)
+
+                if tasknum > 0:
+                    prev = output[batch_size:batch_size+replay_size,start:mid]
+                    loss_CE_prev = self.loss(prev, target_r)
+                    loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size)
+
+                else:
+                    loss_CE = loss_CE_curr / batch_size
                 
             loss_KD = 0
             if tasknum > 0 and self.args.KD:

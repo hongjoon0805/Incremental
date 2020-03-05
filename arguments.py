@@ -9,7 +9,7 @@ def get_args():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                         help='learning rate (default: 0.1. Note that lr is decayed by args.gamma parameter args.schedule ')
-    parser.add_argument('--alpha', type=float, default=1, help='Label smoothing')
+    parser.add_argument('--alpha', type=float, default=1, help='KD strength')
     parser.add_argument('--ratio', type=float, default=1/512, help='variance ratio')
     parser.add_argument('--beta', type=float, default=1e-4, help='CI and uniform penalty strength')
     parser.add_argument('--schedule', type=int, nargs='+', default=[40,80],
@@ -44,8 +44,17 @@ def get_args():
     parser.add_argument('--rand-init', action='store_true', default=False, help='Use random init')
     parser.add_argument('--local_rank', type=int, default=-1,help='local rank passed from distributed launcher')
     parser.add_argument('--dataset', default='', type=str, required=True,
-                        choices=['CIFAR100', 
-                                 'Imagenet'], 
+                        choices=['CIFAR10',
+                                 'CIFAR100', 
+                                 'Imagenet',
+                                 'VggFace2_1K',
+                                 'VggFace2_5K',
+                                 'Google_Landmark_v2_1K',
+                                 'Google_Landmark_v2_10K'], 
+                        help='(default=%(default)s)')
+    parser.add_argument('--ablation', default='None', type=str, required=False,
+                        choices=['None', 
+                                 'naive',], 
                         help='(default=%(default)s)')
     parser.add_argument('--loss', default='CE', type=str, required=False,
                         choices=['GCE', 
@@ -54,12 +63,11 @@ def get_args():
     parser.add_argument('--trainer', default='', type=str, required=True,
                         choices=['lwf', 
                                  'er', 
-                                 'bayes',
-                                 'gda',
                                  'coreset',
-                                 'ood',
-                                 'bin_finetune',
-                                 'icarl'], 
+                                 'icarl', 
+                                 'IL2M', 
+                                 'er_NMC', 
+                                 'coreset_NMC'], 
                         help='(default=%(default)s)')
 
     parser.add_argument('--strategy', default='RingBuffer', type=str, required=False,

@@ -53,7 +53,7 @@ class BasicBlock(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
+    def __init__(self, block, layers, num_classes, zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None,
                  norm_layer=None):
         super(ResNet, self).__init__()
@@ -152,17 +152,12 @@ class ResNet(nn.Module):
         return x
 
 
-def _resnet(block, layers):
-    model = ResNet(block, layers)
+def _resnet(block, layers, num_classes):
+    model = ResNet(block, layers, num_classes)
     
     return model
 
 
-def resnet18(num_classees=1000):
-    r"""ResNet-18 model from
-    `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _resnet(BasicBlock, [2, 2, 2, 2])
+def resnet18(num_classes):
+    
+    return _resnet(BasicBlock, [2, 2, 2, 2], num_classes)

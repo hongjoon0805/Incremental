@@ -35,6 +35,8 @@ log_name = '{}_{}_{}_{}_memsz_{}_alpha_{}_beta_{}_base_{}_replay_{}_batch_{}_epo
     args.loss
 )
 
+if args.trainer == 'er' and args.ablation is not 'None':
+    log_name += '_' + args.ablation
 if args.prev_new:
     log_name += '_prev_new'
 if args.uniform_penalty:
@@ -60,10 +62,10 @@ if args.benchmark:
     torch.backends.cudnn.benchmark=True
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
 
-if args.dataset == 'CIFAR100':
+if args.dataset == 'CIFAR100' or args.dataset == 'CIFAR10':
     loader = None
     
-elif args.dataset == 'Imagenet':
+else:
     loader = dataset.loader
     
 seed = args.seed
@@ -76,6 +78,7 @@ torch.cuda.manual_seed(seed)
 
 # Loader used for training data
 shuffle_idx = shuffle(np.arange(dataset.classes), random_state=args.seed)
+print(shuffle_idx)
 # shuffle_idx = shuffle(np.arange(dataset.classes))
 train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
                                                       dataset.train_labels,
@@ -140,7 +143,7 @@ train_iterator = torch.utils.data.DataLoader(train_dataset_loader,
                                              batch_size=args.batch_size, shuffle=True, drop_last=True, **kwargs)
 
 evaluator_iterator = torch.utils.data.DataLoader(evaluate_dataset_loader,
-                                             batch_size=args.batch_size, shuffle=True,  drop_last=True, **kwargs)
+                                             batch_size=args.batch_size, shuffle=True, **kwargs)
 
 # Iterator to iterate over test data
 test_iterator = torch.utils.data.DataLoader(test_dataset_loader, batch_size=100, shuffle=False, **kwargs)
@@ -170,8 +173,7 @@ elif args.trainer == 'IL2M':
 else:
     testType = 'trainedClassifier'
     
-
-t_classifier = trainer.EvaluatorFactory.get_evaluator(testType)
+t_classifier = trainer.EvaluatorFactory.get_evaluator(testType, classes=dataset.classes)
 
 # Loop that incrementally adds more and more classes
 
@@ -194,14 +196,19 @@ for head in ['all', 'prev_new', 'task', 'cheat']:
 results['task_soft_1'] = np.zeros((tasknum, tasknum))
 results['task_soft_5'] = np.zeros((tasknum, tasknum))
 
+print(tasknum)
+
 for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     
+    if args.dataset == 'CIFAR10' and t==2:
+        break
+    
     if args.trainer == 'IL2M' or args.trainer == 'coreset_NMC':
-        model_name = 'models/trained_model/RESULT_{}_coreset_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_4_RingBuffer_CE_lr_change_task_{}.pt'.format(self.args.dataset, self.args.seed, self.args.memory_budget, self.args.base_classes, t)
+        model_name = 'models/trained_model/RESULT_{}_coreset_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_4_RingBuffer_CE_lr_change_task_{}.pt'.format(args.dataset, args.seed, args.memory_budget, args.base_classes, t)
         myTrainer.model.load_state_dict(torch.load(model_name))
         
     elif args.trainer == 'er_NMC':
-        model_name = 'models/trained_model/RESULT_{}_er_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_5_RingBuffer_CE_lr_change_task_{}.pt'.format(self.args.dataset, self.args.seed, self.args.memory_budget, self.args.base_classes, t)
+        model_name = 'models/trained_model/RESULT_{}_er_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_5_RingBuffer_CE_lr_change_task_{}.pt'.format(args.dataset, args.seed, args.memory_budget, args.base_classes, t)
         myTrainer.model.load_state_dict(torch.load(model_name))
     
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
@@ -216,15 +223,37 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
+    flag = 0
+    mem_base = {}
+    mem_base['Imagenet'] = 5000
+    mem_base['Google_Landmark_v2_1K'] = 5000
+    mem_base['Google_Landmark_v2_10K'] = 10000
+    if (args.trainer == 'er' or args.trainer == 'coreset') and t==0:
+        try:
+            model_name = 'models/trained_model/RESULT_{}_coreset_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_100_factor_4_RingBuffer_CE_lr_change_task_{}.pt'.format(args.dataset, args.seed, mem_base[args.dataset], args.base_classes, t)
+            myTrainer.model.load_state_dict(torch.load(model_name))
+            flag=1
+        except:
+            pass
+        
+    if args.trainer == 'icarl' and t==0:
+        try:
+            model_name = 'models/trained_model/RESULT_{}_icarl_{}_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_128_epoch_60_factor_1_RingBuffer_CE_lr_change_task_{}.pt'.format(args.dataset, args.seed, mem_base[args.dataset], args.base_classes, t)
+            myTrainer.model.load_state_dict(torch.load(model_name))
+            flag=1
+        except:
+            pass
     
     # Running nepochs epochs
     for epoch in range(0, total_epochs):
+        
+        if flag:
+            break
         myTrainer.update_lr(epoch, schedule)
         if args.trainer == 'IL2M' or args.trainer == 'coreset_NMC' or args.trainer == 'er_NMC':
             break
         else:
             myTrainer.train(epoch)
-            
         
         if epoch % 5 == (5 - 1) and args.debug:
             if args.trainer == 'icarl':
@@ -260,14 +289,25 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     # Evaluate the learned classifier
     if args.trainer == 'icarl' or args.trainer == 'coreset_NMC' or args.trainer == 'er_NMC':
         t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
+        print('Moment update finished')
     
+    if args.trainer == 'IL2M':
+        t_classifier.update_mean(myTrainer.model, evaluator_iterator, train_end, args.step_size)
+        print('Mean update finished')
+        
+    if args.dataset == 'CIFAR10':
+        myTrainer.increment_classes()
+        evaluate_dataset_loader.update_exemplar()
+        evaluate_dataset_loader.task_change()
+        torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
+        continue
     
     if t>0:
-            
-        train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
-        print("*********CURRENT EPOCH********** : %d"%epoch)
-        print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
-        print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
+        if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
+            train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
+            print("*********CURRENT EPOCH********** : %d"%epoch)
+            print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
+            print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
 
         correct, correct_5, stat = t_classifier.evaluate(myTrainer.model, test_iterator,
                                                          test_start, test_end, 
@@ -290,9 +330,11 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         results['cheat']['correct_5'].append(correct_5['cheat'])
         
     else:
-        train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, train_start, train_end)
-        print("Train Classifier top-1 Final(Softmax): %0.2f"%train_1)
-        print("Train Classifier top-5 Final(Softmax): %0.2f"%train_5)
+        if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
+            train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, train_start, train_end)
+            print("Train Classifier top-1 Final(Softmax): %0.2f"%train_1)
+            print("Train Classifier top-5 Final(Softmax): %0.2f"%train_5)
+        
         test_1, test_5 = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end, 
                                               mode='test', step_size=args.step_size)
         print("Test Classifier top-1 Final(Softmax): %0.2f"%test_1)
@@ -308,7 +350,7 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         dataset_loader = result_dataset_loaders[i]
         iterator = torch.utils.data.DataLoader(dataset_loader,
                                                batch_size=args.batch_size, **kwargs)
-        print(start, end)
+        
         results['task_soft_1'][t][i], results['task_soft_5'][t][i] = t_classifier.evaluate(myTrainer.model, iterator, start, end)
         start = end
         end += args.step_size
@@ -323,5 +365,5 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     test_end = test_end + args.step_size
     if args.trainer == 'er':
         train_start = train_end - args.step_size
-    if args.trainer == 'er' or args.trainer == 'coreset':
+    if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
         torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
