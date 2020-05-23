@@ -66,6 +66,7 @@ def get_args():
                                  'coreset',
                                  'icarl', 
                                  'IL2M', 
+                                 'bic', 
                                  'er_NMC', 
                                  'coreset_NMC'], 
                         help='(default=%(default)s)')

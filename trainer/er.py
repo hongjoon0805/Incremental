@@ -106,14 +106,6 @@ class Trainer(trainer.GenericTrainer):
             
             if self.args.ablation == 'naive':
                 target = torch.cat((target, target_r))
-                
-#                 y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
-
-#                 y_onehot.zero_()
-#                 y_onehot.scatter_(1, target.unsqueeze(1), 1)
-#                 output_log = F.log_softmax(output[:,start:end], dim=1)
-#                 loss_CE = F.kl_div(output_log, y_onehot[:,start:end], reduction='batchmean')
-                
                 loss_CE = self.loss(output[:,:end],target) / (batch_size + replay_size)
             
             else:

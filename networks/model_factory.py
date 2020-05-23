@@ -4,7 +4,7 @@ class ModelFactory():
         pass
 
     @staticmethod
-    def get_model(dataset, ratio, trainer):
+    def get_model(dataset):
         
         if dataset == 'CIFAR100':
             

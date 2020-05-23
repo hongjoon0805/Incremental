@@ -1,9 +1,3 @@
-''' Incremental-Classifier Learning 
- Authors : Khurram Javed, Muhammad Talha Paracha
- Maintainer : Khurram Javed
- Lab : TUKL-SEECS R&D Lab
- Email : 14besekjaved@seecs.edu.pk '''
-
 import copy
 import logging
 import time
@@ -18,7 +12,7 @@ from torch.autograd import Variable
 import torchvision.transforms.functional as trnF
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, loader = None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'coreset', self_sup = False):
+    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, loader = None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'bic'):
         if shuffle_idx is not None:
             # label shuffle
             print("Label shuffled")
@@ -41,6 +35,7 @@ class IncrementalLoader(td.Dataset):
         self.t=0
         
         self.mem_sz = mem_sz
+        self.bias_mem_sz = int(mem_sz/10)
         self.mode=mode
         self.batch_size = batch_size
         
@@ -49,15 +44,19 @@ class IncrementalLoader(td.Dataset):
         
         self.start_idx = 0
         self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index
+        if self.end == classes:
+            self.end_idx = len(labels)-1
         
+        if approach == 'bic':
+            self.end_idx -= self.bias_mem_sz
         
         self.len = self.end_idx - self.start_idx
         self.current_len = self.len
         
         self.strategy = strategy
         self.approach = approach
-        self.self_sup = self_sup
         self.exemplar = []
+        self.bias_buffer = []
         self.start_point = []
         for i in range(classes):
             self.start_point.append(np.argmin(self.labelsNormal<i))
@@ -73,10 +72,14 @@ class IncrementalLoader(td.Dataset):
         if self.end_idx == 0:
             self.end_idx = self.labels.shape[0]
         
+        if self.approach == 'bic':
+            self.end_idx -= self.bias_mem_sz
+        
         self.len = self.end_idx - self.start_idx
         self.current_len = self.len
         
-        if self.approach == 'coreset' or self.approach == 'icarl':
+        
+        if self.approach == 'coreset' or self.approach == 'icarl' or self.approach == 'bic':
             self.len += len(self.exemplar)
         
     def update_exemplar(self):
@@ -86,25 +89,39 @@ class IncrementalLoader(td.Dataset):
             
     def RingBuffer(self):
         buffer_per_class = self.mem_sz // self.end
+        if self.approach == 'bic':
+            buffer_per_class = int((self.mem_sz // self.end)*0.9)
+            val_per_class = int((self.mem_sz // self.end)*0.1)
         self.exemplar = []
+        self.bias_buffer = [] 
+        self.bias_buffer += range(self.end_idx, self.end_idx + self.bias_mem_sz)
         for i in range(self.end):
             start = self.start_point[i]
             self.exemplar += range(start,start+buffer_per_class)
+            if self.approach == 'bic':
+                self.bias_buffer += range(start+buffer_per_class, start+buffer_per_class+val_per_class)
+                
+        if self.mode == 'bias':
+            print('Length')
+            print(len(self.bias_buffer))
             
     def __len__(self):
         if self.mode == 'train':
             return self.len
+        elif self.mode == 'bias':
+            return len(self.bias_buffer)
         else:
             return self.end_idx
     
     def __getitem__(self, index):
         
         if self.mode == 'train':
-            if (self.approach == 'coreset' or self.approach == 'icarl') and index >= self.current_len:
+            if (self.approach == 'coreset' or self.approach == 'icarl' or self.approach == 'bic') and index >= self.current_len:
                 index = self.exemplar[index - self.current_len]
             else:
                 index = self.start_idx + index
-                
+        elif self.mode == 'bias':
+            index = self.bias_buffer[index]
         img = self.data[index]
         
         try:

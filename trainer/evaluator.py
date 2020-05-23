@@ -92,6 +92,8 @@ class EvaluatorFactory():
             return softmax_evaluator()
         if testType == "IL2M":
             return IL2M_evaluator(classes)
+        if testType == "bic":
+            return BiC_evaluator(classes)
         if testType == "generativeClassifier":
             return GDA(classes, option = option)
 
@@ -113,6 +115,8 @@ class GDA():
             # Iterate over all train Dataset
             for data, target in tqdm(loader):
                 data, target = data.cuda(), target.cuda()
+                if data.shape[0]<4:
+                    continue
                 total += data.shape[0]
                 _, features = model.forward(data, feature_return=True)
 
@@ -169,6 +173,8 @@ class GDA():
 
             for data, target in tqdm(loader):
                 data, target = data.cuda(), target.cuda()
+                if data.shape[0]<4:
+                    continue
                 _, features  = model(data, feature_return=True)
 
                 batch_size = data.shape[0]
@@ -300,6 +306,84 @@ class IL2M_evaluator():
 
                     out = (1-mask).float() * prob + mask.float() * rect_prob
 
+                    pred, pred_5 = make_pred(out, start, end, step_size)
+
+                    if target[0]<end-step_size: # prev
+
+                        cnt_stat(target,start,end,step_size,'prev','all',pred,pred_5,correct,correct_5,stat,batch_size)
+                        cnt_stat(target,start,end,step_size,'prev','prev_new',pred,pred_5,correct,correct_5,stat,batch_size)
+                        cnt_stat(target,start,end,step_size,'prev','task',pred, pred_5,correct,correct_5,stat,batch_size)
+
+                        cheat(out, target, start, end-step_size, end - start-step_size, correct, correct_5)
+
+                    else: # new
+
+                        cnt_stat(target,start,end,step_size,'new','all',pred,pred_5,correct,correct_5,stat,batch_size)
+                        cnt_stat(target,start,end,step_size,'new','prev_new',pred,pred_5,correct,correct_5,stat,batch_size)
+                        cnt_stat(target,start,end,step_size,'new','task',pred, pred_5,correct,correct_5,stat,batch_size)
+
+                        cheat(out, target, end-step_size, end, step_size, correct, correct_5)
+                else:
+                    output = out[:,start:end]
+                    target = target % (end - start)
+
+                    pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+                    correct_cnt += pred.eq(target.data.view_as(pred)).sum().item()
+
+                    pred_5 = torch.topk(output, 5, dim=1)[1]
+                    correct_5_cnt += pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).sum().item()
+
+            if mode == 'test' and end > step_size:
+
+                for head in ['all','prev_new','task','cheat']:
+                    correct[head] = 100. * correct[head] / total
+                    correct_5[head] = 100. * correct_5[head] / total
+                stat['all'][6] = stat['prev_new'][6] = stat['task'][6] = total
+                return correct, correct_5, stat
+
+            return 100. * correct_cnt / total, 100. * correct_5_cnt / total, 
+
+class BiC_evaluator():
+    '''
+    Evaluator class for softmax classification 
+    '''
+
+    def __init__(self, classes):
+        
+        self.classes = classes
+        
+    def evaluate(self, model, loader, start, end, bias_correction_layer, mode='train', step_size=100):
+        
+        with torch.no_grad():
+            model.eval()
+            correct_cnt = 0
+            correct_5_cnt = 0
+            total = 0
+            step_size = step_size
+            stat = {}
+            correct = {}
+            correct_5 = {}
+            correct['cheat'] = 0
+            correct_5['cheat'] = 0
+            head_arr = ['all', 'prev_new', 'task']
+            for head in head_arr:
+                # cp, epp, epn, cn, enn, enp, total
+                stat[head] = [0,0,0,0,0,0,0]
+                correct[head] = 0
+                correct_5[head] = 0
+
+            for data, target in tqdm(loader):
+                data, target = data.cuda(), target.cuda()
+
+                batch_size = data.shape[0]
+                total += data.shape[0]
+
+                out = model(data)[:,:end]
+                if end > step_size:
+                    out = bias_correction_layer(out, start, end)
+
+                if mode == 'test' and end > step_size:
+                    
                     pred, pred_5 = make_pred(out, start, end, step_size)
 
                     if target[0]<end-step_size: # prev
