@@ -380,7 +380,7 @@ class BiC_evaluator():
 
                 out = model(data)[:,:end]
                 if end > step_size:
-                    out = bias_correction_layer(out, start, end)
+                    out = bias_correction_layer(out, end-step_size, end)
 
                 if mode == 'test' and end > step_size:
                     
