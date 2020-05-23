@@ -6,7 +6,6 @@ import numpy as np
 import scipy.io as sio
 
 import data_handler
-import experiment as ex
 import networks
 import trainer
 import arguments
