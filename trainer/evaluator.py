@@ -380,7 +380,8 @@ class BiC_evaluator():
 
                 out = model(data)[:,:end]
                 if end > step_size:
-                    out = bias_correction_layer(out, end-step_size, end)
+                    out_new = bias_correction_layer(out[:,end-step_size:end])
+                    out = torch.cat((out[:,:end-step_size], out_new), dim=1)
 
                 if mode == 'test' and end > step_size:
                     

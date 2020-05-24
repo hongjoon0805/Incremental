@@ -47,8 +47,8 @@ class IncrementalLoader(td.Dataset):
         if self.end == classes:
             self.end_idx = len(labels)-1
         
-        if approach == 'bic':
-            self.end_idx -= self.bias_mem_sz
+#         if approach == 'bic':
+#             self.end_idx -= self.bias_mem_sz
         
         self.len = self.end_idx - self.start_idx
         self.current_len = self.len
@@ -102,8 +102,11 @@ class IncrementalLoader(td.Dataset):
                 self.bias_buffer += range(start+buffer_per_class, start+buffer_per_class+val_per_class)
                 
         if self.mode == 'bias':
-            print('Length')
+            print('bias buffer length')
             print(len(self.bias_buffer))
+            
+            print('exemplar buffer length')
+            print(len(self.exemplar))
             
     def __len__(self):
         if self.mode == 'train':

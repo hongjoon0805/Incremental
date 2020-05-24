@@ -21,12 +21,10 @@ import trainer
 class BiasLayer(nn.Module):
     def __init__(self):
         super(BiasLayer, self).__init__()
-        self.alpha = torch.nn.Parameter(torch.ones(1, requires_grad=True))
-        self.beta = torch.nn.Parameter(torch.zeros(1, requires_grad=True))
-    def forward(self, x, start, end):
-        x[:,start:end] *= self.alpha
-        x[:,start:end] += self.beta
-        return x
+        self.alpha =  nn.Parameter(torch.Tensor(1).uniform_(1,1))
+        self.beta = nn.Parameter(torch.Tensor(1).uniform_(0,0))
+    def forward(self, x):
+        return x*self.alpha + self.beta
 
 class Trainer(trainer.GenericTrainer):
     def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
@@ -65,16 +63,14 @@ class Trainer(trainer.GenericTrainer):
 
     def setup_training(self, lr):
         
+        self.bias_correction_layer = BiasLayer()
+        self.bias_optimizer = torch.optim.SGD(self.bias_correction_layer.parameters(), self.args.lr)
+        
         for param_group in self.optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
             param_group['lr'] = lr
             self.current_lr = lr
             
-        for param_group in self.bias_optimizer.param_groups:
-            print("Setting LR to %0.4f"%lr)
-            param_group['lr'] = lr
-            self.current_lr = lr
-
     def update_frozen_model(self):
         self.model.eval()
         self.model_fixed = copy.deepcopy(self.model)
@@ -124,9 +120,6 @@ class Trainer(trainer.GenericTrainer):
             self.optimizer.step()
             
     def train_bias_correction(self, bias_iterator):
-        # bias train iterator가 필요하다 validation data 2000장 정도 필요함. (1000 + 1000)
-        # output 뽑고 new 쪽에만 forward 하도록 짜야한다.
-        # bias correction layer 전용 optimizer가 필요하다.
         
         tasknum = self.train_data_iterator.dataset.t
         end = self.train_data_iterator.dataset.end
@@ -136,7 +129,8 @@ class Trainer(trainer.GenericTrainer):
             data, target = data.cuda(), target.cuda()
             
             output = self.model(data)[:,:end]
-            output = self.bias_correction_layer(output, start, end)
+            output_new = self.bias_correction_layer(output[:,start:end])
+            output = torch.cat((output[:,:start], output_new), dim=1)
             
             loss_CE = self.loss(output, target)
             

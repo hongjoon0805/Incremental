@@ -310,14 +310,14 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         print('Mean update finished')
     
     if args.trainer == 'bic' and t>0:
-        
-        # Iterator to iterate over validation data for training bias correction layer 
         bias_iterator = torch.utils.data.DataLoader(bias_dataset_loader, 
                                                     batch_size=args.batch_size, shuffle=True, **kwargs)
-        
         for e in range(total_epochs*2):
             myTrainer.train_bias_correction(bias_iterator)
             myTrainer.update_bias_lr(e, schedule)
+            
+#             print(myTrainer.bias_correction_layer.alpha)
+#             print(myTrainer.bias_correction_layer.beta)
     
     if t>0:
         if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
