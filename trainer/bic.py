@@ -50,7 +50,7 @@ class Trainer(trainer.GenericTrainer):
     def update_bias_lr(self, epoch, schedule):
         for temp in range(0, len(schedule)):
             if schedule[temp]*2 == epoch:
-                for param_group in self.optimizer.bias_optimizer:
+                for param_group in self.bias_optimizer.param_groups:
                     self.current_lr = param_group['lr']
                     param_group['lr'] = self.current_lr * self.args.gammas[temp]
                     print("Changing learning rate from %0.4f to %0.4f"%(self.current_lr,
@@ -66,6 +66,11 @@ class Trainer(trainer.GenericTrainer):
     def setup_training(self, lr):
         
         for param_group in self.optimizer.param_groups:
+            print("Setting LR to %0.4f"%lr)
+            param_group['lr'] = lr
+            self.current_lr = lr
+            
+        for param_group in self.bias_optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
             param_group['lr'] = lr
             self.current_lr = lr
