@@ -260,7 +260,6 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     # Running nepochs epochs
     print('Flag: %d'%flag)
     for epoch in range(0, total_epochs):
-        
         if flag:
             break
         myTrainer.update_lr(epoch, schedule)
@@ -309,16 +308,30 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         t_classifier.update_mean(myTrainer.model, evaluator_iterator, train_end, args.step_size)
         print('Mean update finished')
     
+    ############################################
+    #        BIC bias correction train         #
+    ############################################
+    
     if args.trainer == 'bic' and t>0:
+        
+        train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 
+                                                     0, train_end, myTrainer.bias_correction_layer)
+        print("*********CURRENT EPOCH********** : %d"%epoch)
+        print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
+        print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
+        
         bias_iterator = torch.utils.data.DataLoader(bias_dataset_loader, 
                                                     batch_size=args.batch_size, shuffle=True, **kwargs)
+        print(myTrainer.bias_correction_layer.alpha)
+        print(myTrainer.bias_correction_layer.beta)
+        
         for e in range(total_epochs*2):
             myTrainer.train_bias_correction(bias_iterator)
             myTrainer.update_bias_lr(e, schedule)
             
-#             print(myTrainer.bias_correction_layer.alpha)
-#             print(myTrainer.bias_correction_layer.beta)
-    
+            print(myTrainer.bias_correction_layer.alpha)
+            print(myTrainer.bias_correction_layer.beta)
+            
     if t>0:
         if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
             train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)

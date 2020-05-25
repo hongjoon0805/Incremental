@@ -47,9 +47,7 @@ class IncrementalLoader(td.Dataset):
         if self.end == classes:
             self.end_idx = len(labels)-1
         
-#         if approach == 'bic':
-#             self.end_idx -= self.bias_mem_sz
-        
+        self.tr_idx = range(self.end_idx)
         self.len = self.end_idx - self.start_idx
         self.current_len = self.len
         
@@ -58,8 +56,10 @@ class IncrementalLoader(td.Dataset):
         self.exemplar = []
         self.bias_buffer = []
         self.start_point = []
+        self.end_point = []
         for i in range(classes):
             self.start_point.append(np.argmin(self.labelsNormal<i))
+            self.end_point.append(np.argmax(self.labelsNormal>(i-1)))
         
     def task_change(self):
         self.t += 1
@@ -73,11 +73,34 @@ class IncrementalLoader(td.Dataset):
             self.end_idx = self.labels.shape[0]
         
         if self.approach == 'bic':
-            self.end_idx -= self.bias_mem_sz
+            val_per_class = self.bias_mem_sz // self.step_size
+            self.tr_idx = []
+            for i in range(self.step_size):
+                end = self.end_point[self.start + i + 1]
+                start = self.start_point[self.start + i]
+                self.bias_buffer += range(end-val_per_class, end)
+                print(start, end-val_per_class)
+                self.tr_idx += range(start, end-val_per_class)
+        
+#         if self.mode == 'bias':
+#             print('bias buffer length')
+#             print(len(self.bias_buffer))
+#             arr = []
+#             for i in self.bias_buffer:
+#                 arr.append(self.labelsNormal[i])
+#             print(arr)
+            
+#             print('training buffer length')
+#             print(len(self.tr_idx))
+#             arr = []
+#             for i in self.tr_idx:
+#                 arr.append(self.labelsNormal[i])
+#             print(arr)
         
         self.len = self.end_idx - self.start_idx
+        if self.approach == 'bic':
+            self.len -= self.bias_mem_sz
         self.current_len = self.len
-        
         
         if self.approach == 'coreset' or self.approach == 'icarl' or self.approach == 'bic':
             self.len += len(self.exemplar)
@@ -94,20 +117,12 @@ class IncrementalLoader(td.Dataset):
             val_per_class = int((self.mem_sz // self.end)*0.1)
         self.exemplar = []
         self.bias_buffer = [] 
-        self.bias_buffer += range(self.end_idx, self.end_idx + self.bias_mem_sz)
         for i in range(self.end):
             start = self.start_point[i]
             self.exemplar += range(start,start+buffer_per_class)
             if self.approach == 'bic':
                 self.bias_buffer += range(start+buffer_per_class, start+buffer_per_class+val_per_class)
                 
-        if self.mode == 'bias':
-            print('bias buffer length')
-            print(len(self.bias_buffer))
-            
-            print('exemplar buffer length')
-            print(len(self.exemplar))
-            
     def __len__(self):
         if self.mode == 'train':
             return self.len
@@ -122,7 +137,10 @@ class IncrementalLoader(td.Dataset):
             if (self.approach == 'coreset' or self.approach == 'icarl' or self.approach == 'bic') and index >= self.current_len:
                 index = self.exemplar[index - self.current_len]
             else:
-                index = self.start_idx + index
+                if self.approach == 'bic':
+                    index = self.tr_idx[index]
+                else:
+                    index = self.start_idx + index
         elif self.mode == 'bias':
             index = self.bias_buffer[index]
         img = self.data[index]

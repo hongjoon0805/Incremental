@@ -1,9 +1,3 @@
-''' Incremental-Classifier Learning 
- Authors : Khurram Javed, Muhammad Talha Paracha
- Maintainer : Khurram Javed
- Lab : TUKL-SEECS R&D Lab
- Email : 14besekjaved@seecs.edu.pk '''
-
 from __future__ import print_function
 
 import copy
@@ -67,6 +61,11 @@ class Trainer(trainer.GenericTrainer):
         self.bias_optimizer = torch.optim.SGD(self.bias_correction_layer.parameters(), self.args.lr)
         
         for param_group in self.optimizer.param_groups:
+            print("Setting LR to %0.4f"%lr)
+            param_group['lr'] = lr
+            self.current_lr = lr
+            
+        for param_group in self.bias_optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
             param_group['lr'] = lr
             self.current_lr = lr
