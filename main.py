@@ -256,6 +256,17 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
             flag=1
         except:
             pass
+        
+    if args.trainer == 'bic':
+        try:
+            model_name = 'models/trained_model/ECCV_rebuttal_{}_bic_0_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_256_epoch_100_factor_1_RingBuffer_CE_task_{}.pt'.format(args.dataset, args.memory_budget, args.base_classes, t)
+            myTrainer.model.load_state_dict(torch.load(model_name))
+            
+            model_name = 'models/trained_model/ECCV_rebuttal_{}_bic_0_memsz_{}_alpha_1_beta_0.0001_base_{}_replay_32_batch_256_epoch_100_factor_1_RingBuffer_CE_bias_task_{}.pt'.format(args.dataset, args.memory_budget, args.base_classes, t)
+            myTrainer.bias_correction_layer.load_state_dict(torch.load(model_name))
+            flag=1
+        except:
+            pass
     
     # Running nepochs epochs
     print('Flag: %d'%flag)
@@ -312,7 +323,7 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     #        BIC bias correction train         #
     ############################################
     
-    if args.trainer == 'bic' and t>0:
+    if args.trainer == 'bic' and t>0 and flag != 1:
         
         train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 
                                                      0, train_end, myTrainer.bias_correction_layer)
@@ -333,6 +344,10 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
             print(myTrainer.bias_correction_layer.beta)
             
     if t>0:
+        
+        if flag:
+            print('Evaluation!')
+        
         if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
             train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
             print("*********CURRENT EPOCH********** : %d"%epoch)
@@ -371,6 +386,9 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         results['cheat']['correct_5'].append(correct_5['cheat'])
         
     else:
+        if flag:
+            print('Evaluation!')
+        
         if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
             train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, train_start, train_end)
             print("Train Classifier top-1 Final(Softmax): %0.2f"%train_1)
