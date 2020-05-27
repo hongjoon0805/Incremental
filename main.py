@@ -214,9 +214,6 @@ results['task_soft_5'] = np.zeros((tasknum, tasknum))
 
 print(tasknum)
 
-for t in range(tasknum):
-    myTrainer.increment_classes()
-print(aaa)
 for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     
     if args.trainer == 'IL2M' or args.trainer == 'coreset_NMC':
