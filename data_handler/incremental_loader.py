@@ -63,12 +63,13 @@ class IncrementalLoader(td.Dataset):
             self.end_point.append(np.argmax(self.labelsNormal>(i)))
         self.end_point[-1] = len(labels)
         
-        
     def task_change(self):
         self.t += 1
         
         self.start = self.end
         self.end += self.step_size
+        
+        print(self.start, self.end)
         
         self.start_idx = np.argmin(self.labelsNormal<self.start) # start data index
         self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index

@@ -214,6 +214,9 @@ results['task_soft_5'] = np.zeros((tasknum, tasknum))
 
 print(tasknum)
 
+for t in range(tasknum):
+    myTrainer.increment_classes()
+print(aaa)
 for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     
     if args.trainer == 'IL2M' or args.trainer == 'coreset_NMC':
@@ -433,14 +436,6 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
     
     sio.savemat('./result_data/'+log_name+'.mat',results)
     
-    myTrainer.increment_classes()
-    evaluate_dataset_loader.update_exemplar()
-    evaluate_dataset_loader.task_change()
-    bias_dataset_loader.update_exemplar()
-    bias_dataset_loader.task_change()
-    
-    train_end = train_end + args.step_size
-    test_end = test_end + args.step_size
     if args.trainer == 'er':
         train_start = train_end - args.step_size
     if args.trainer == 'er' or args.trainer == 'coreset' or args.trainer == 'icarl':
@@ -449,3 +444,12 @@ for t in range((dataset.classes-args.base_classes)//args.step_size+1):
         torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
         torch.save(myTrainer.bias_correction_layer.state_dict(), 
                    './models/trained_model/' + log_name + '_bias' + '_task_{}.pt'.format(t))
+        
+    myTrainer.increment_classes()
+    evaluate_dataset_loader.update_exemplar()
+    evaluate_dataset_loader.task_change()
+    bias_dataset_loader.update_exemplar()
+    bias_dataset_loader.task_change()
+    
+    train_end = train_end + args.step_size
+    test_end = test_end + args.step_size
