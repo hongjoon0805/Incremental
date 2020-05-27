@@ -76,7 +76,7 @@ class IncrementalLoader(td.Dataset):
         if self.end_idx == 0:
             self.end_idx = self.labels.shape[0]
         
-        if self.approach == 'bic':
+        if self.approach == 'bic' and self.start < self.total_classes:
             val_per_class = self.bias_mem_sz // self.step_size
             self.tr_idx = []
             for i in range(self.step_size):
