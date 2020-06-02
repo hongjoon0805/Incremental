@@ -16,10 +16,10 @@ class TrainerFactory():
         
         if args.trainer == 'lwf':
             import trainer.lwf as trainer
-        elif args.trainer == 'er' or args.trainer == 'er_NMC':
-            import trainer.er as trainer
-        elif args.trainer == 'coreset' or args.trainer == 'coreset_NMC' or args.trainer == 'IL2M':
-            import trainer.coreset as trainer
+        elif args.trainer == 'ssil':
+            import trainer.ssil as trainer
+        elif args.trainer == 'ft' or args.trainer == 'il2m':
+            import trainer.ft as trainer
         elif args.trainer == 'icarl':
             import trainer.icarl as trainer
         elif args.trainer == 'bic':

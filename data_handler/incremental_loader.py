@@ -1,7 +1,7 @@
 import copy
 import logging
 import time
-import cv2
+import math
 
 import numpy as np
 import torch
@@ -12,7 +12,7 @@ from torch.autograd import Variable
 import torchvision.transforms.functional as trnF
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, batch_size, transform=None, loader = None, shuffle_idx=None, base_classes=50, strategy = 'Reservior', approach = 'bic'):
+    def __init__(self, data, labels, classes, step_size, mem_sz, mode, transform=None, loader = None, shuffle_idx=None, base_classes=50, approach = 'bic'):
         if shuffle_idx is not None:
             # label shuffle
             print("Label shuffled")
@@ -35,9 +35,8 @@ class IncrementalLoader(td.Dataset):
         self.t=0
         
         self.mem_sz = mem_sz
-        self.bias_mem_sz = int(mem_sz/10)
+        self.validation_buffer_size = int(mem_sz/10) * 2
         self.mode=mode
-        self.batch_size = batch_size
         
         self.start = 0
         self.end = base_classes
@@ -49,18 +48,19 @@ class IncrementalLoader(td.Dataset):
             self.end_idx = len(labels)-1
         
         self.tr_idx = range(self.end_idx)
-        self.len = self.end_idx - self.start_idx
+        self.len = len(self.tr_idx)
         self.current_len = self.len
         
-        self.strategy = strategy
         self.approach = approach
+        self.memory_buffer = []
         self.exemplar = []
-        self.bias_buffer = []
+        self.validation_buffer = []
         self.start_point = []
         self.end_point = []
         for i in range(classes):
             self.start_point.append(np.argmin(self.labelsNormal<i))
             self.end_point.append(np.argmax(self.labelsNormal>(i)))
+            self.memory_buffer.append([])
         self.end_point[-1] = len(labels)
         
     def task_change(self):
@@ -76,40 +76,75 @@ class IncrementalLoader(td.Dataset):
         if self.end_idx == 0:
             self.end_idx = self.labels.shape[0]
         
+        self.tr_idx = range(self.start_idx, self.end_idx)
+        
+        # validation set for bic
         if self.approach == 'bic' and self.start < self.total_classes:
-            val_per_class = self.bias_mem_sz // self.step_size
+            val_per_class = (self.validation_buffer_size//2) // self.step_size
             self.tr_idx = []
             for i in range(self.step_size):
                 end = self.end_point[self.start + i]
                 start = self.start_point[self.start + i]
-                self.bias_buffer += range(end-val_per_class, end)
+                self.validation_buffer += range(end-val_per_class, end)
                 self.tr_idx += range(start, end-val_per_class)
+                
+            print(len(self.exemplar), len(self.validation_buffer))
         
-        self.len = self.end_idx - self.start_idx
-        if self.approach == 'bic':
-            self.len -= self.bias_mem_sz
+        self.len = len(self.tr_idx)
         self.current_len = self.len
         
-        if self.approach == 'coreset' or self.approach == 'icarl' or self.approach == 'bic':
+        if self.approach == 'ft' or self.approach == 'icarl' or self.approach == 'bic' or self.approach =='il2m':
             self.len += len(self.exemplar)
         
     def update_exemplar(self):
         
-        if self.strategy == 'RingBuffer':
-            self.RingBuffer()
-            
-    def RingBuffer(self):
-        buffer_per_class = self.mem_sz // self.end
-        if self.approach == 'bic':
-            buffer_per_class = int((self.mem_sz // self.end)*0.9)
-            val_per_class = int((self.mem_sz // self.end)*0.1)
+        buffer_per_class = math.ceil(self.mem_sz / self.end)
+        # first, add new exemples
+
+        for i in range(self.start,self.end):
+            start_idx = self.start_point[i]
+            self.memory_buffer[i] += range(start_idx, start_idx+buffer_per_class)
+        # second, throw away the previous samples
+        if buffer_per_class > 0:
+            for i in range(self.start):
+                if len(self.memory_buffer[i]) > buffer_per_class:
+                    del self.memory_buffer[i][buffer_per_class:]
+
+        # third, select classes from previous classes, and throw away only 1 samples per class
+        # randomly select classes. **random seed = self.t or start** <-- IMPORTANT!
+
+        length =sum([len(i) for i in self.memory_buffer])
+        remain = length - self.mem_sz
+        if remain > 0:
+            imgs_per_class = [len(i) for i in self.memory_buffer]
+            selected_classes = np.argsort(imgs_per_class)[-remain:]
+            for c in selected_classes:
+                self.memory_buffer[c].pop()
+
         self.exemplar = []
-        self.bias_buffer = [] 
-        for i in range(self.end):
-            start = self.start_point[i]
-            self.exemplar += range(start,start+buffer_per_class)
-            if self.approach == 'bic':
-                self.bias_buffer += range(start+buffer_per_class, start+buffer_per_class+val_per_class)
+        for arr in self.memory_buffer:
+            self.exemplar += arr
+        
+        # validation set for bic
+        if self.approach == 'bic':
+            self.bic_memory_buffer = copy.deepcopy(self.memory_buffer)
+            self.validation_buffer = []
+            validation_per_class = (self.validation_buffer_size//2) // self.end
+            if validation_per_class > 0:
+                for i in range(self.end):
+                    self.validation_buffer += self.bic_memory_buffer[i][-validation_per_class:]
+                    del self.bic_memory_buffer[i][-validation_per_class:]
+
+            remain = self.validation_buffer_size//2 - validation_per_class * self.end
+
+            if remain > 0:
+                imgs_per_class = [len(i) for i in self.bic_memory_buffer]
+                selected_classes = np.argsort(imgs_per_class)[-remain:]
+                for c in selected_classes:
+                    self.validation_buffer.append(self.bic_memory_buffer[c].pop())
+            self.exemplar = []
+            for arr in self.bic_memory_buffer:
+                self.exemplar += arr
                 
     def __len__(self):
         if self.mode == 'train':
@@ -122,14 +157,12 @@ class IncrementalLoader(td.Dataset):
     def __getitem__(self, index):
         
         if self.mode == 'train':
-            if (self.approach == 'coreset' or self.approach == 'icarl' or self.approach == 'bic') and index >= self.current_len:
+            if index >= self.current_len: # for bic, ft, icarl, il2m
                 index = self.exemplar[index - self.current_len]
             else:
-                if self.approach == 'bic':
-                    index = self.tr_idx[index]
-                else:
-                    index = self.start_idx + index
-        elif self.mode == 'bias':
+                index = self.tr_idx[index]
+            
+        elif self.mode == 'bias': # for bic bias correction
             index = self.bias_buffer[index]
         img = self.data[index]
         
