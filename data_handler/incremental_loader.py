@@ -69,7 +69,7 @@ class IncrementalLoader(td.Dataset):
         self.start = self.end
         self.end += self.step_size
         
-        print(self.start, self.end)
+        print('dataset start, end: ',self.start, self.end)
         
         self.start_idx = np.argmin(self.labelsNormal<self.start) # start data index
         self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index
@@ -79,7 +79,7 @@ class IncrementalLoader(td.Dataset):
         self.tr_idx = range(self.start_idx, self.end_idx)
         
         # validation set for bic
-        if self.approach == 'bic' and self.start < self.total_classes:
+        if self.approach == 'bic' and self.start < self.total_classes and self.mode != 'test':
             val_per_class = (self.validation_buffer_size//2) // self.step_size
             self.tr_idx = []
             for i in range(self.step_size):
@@ -88,7 +88,13 @@ class IncrementalLoader(td.Dataset):
                 self.validation_buffer += range(end-val_per_class, end)
                 self.tr_idx += range(start, end-val_per_class)
                 
-            print(len(self.exemplar), len(self.validation_buffer))
+            print('exemplar, validation: ', len(self.exemplar), len(self.validation_buffer))
+        
+            arr = []
+            for idx in self.validation_buffer:
+                arr.append(self.labelsNormal[idx])
+            print(arr)
+        
         
         self.len = len(self.tr_idx)
         self.current_len = self.len
@@ -150,7 +156,7 @@ class IncrementalLoader(td.Dataset):
         if self.mode == 'train':
             return self.len
         elif self.mode == 'bias':
-            return len(self.bias_buffer)
+            return len(self.validation_buffer)
         else:
             return self.end_idx
     
@@ -163,7 +169,7 @@ class IncrementalLoader(td.Dataset):
                 index = self.tr_idx[index]
             
         elif self.mode == 'bias': # for bic bias correction
-            index = self.bias_buffer[index]
+            index = self.validation_buffer[index]
         img = self.data[index]
         
         try:

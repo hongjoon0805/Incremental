@@ -102,7 +102,7 @@ class Trainer(trainer.GenericTrainer):
 
                     soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
                     output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
-                    loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2) * self.args.alpha
+                    loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                 
                 loss_KD = loss_KD.sum()
                 

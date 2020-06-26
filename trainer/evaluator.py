@@ -90,7 +90,7 @@ class EvaluatorFactory():
     def get_evaluator(testType="trainedClassifier", classes=1000, option='euclidean'):
         if testType == "trainedClassifier":
             return softmax_evaluator()
-        if testType == "IL2M":
+        if testType == "il2m":
             return IL2M_evaluator(classes)
         if testType == "bic":
             return BiC_evaluator(classes)
@@ -118,8 +118,11 @@ class GDA():
                 if data.shape[0]<4:
                     continue
                 total += data.shape[0]
-                _, features = model.forward(data, feature_return=True)
-
+                try:
+                    _, features = model.forward(data, feature_return=True)
+                except:
+                    continue
+                    
                 class_means.index_add_(0, target, features.data)
                 totalFeatures.index_add_(0, target, torch.ones_like(target.unsqueeze(1)).float().cuda())
                 
@@ -175,7 +178,10 @@ class GDA():
                 data, target = data.cuda(), target.cuda()
                 if data.shape[0]<4:
                     continue
-                _, features  = model(data, feature_return=True)
+                try:
+                    _, features = model.forward(data, feature_return=True)
+                except:
+                    continue
 
                 batch_size = data.shape[0]
                 total += data.shape[0]

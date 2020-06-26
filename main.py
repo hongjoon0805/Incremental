@@ -38,8 +38,8 @@ if args.trainer == 'ssil' or args.trainer == 'ft' or args.trainer == 'il2m':
 if args.prev_new:
     log_name += '_prev_new'
 
-if args.benchmark:
-    torch.backends.cudnn.benchmark=True
+torch.backends.cudnn.benchmark=True
+torch.backends.cudnn.deterministic = True
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
 
 if args.dataset == 'CIFAR100' or args.dataset == 'CIFAR10':
@@ -280,12 +280,6 @@ for t in range(tasknum):
     ############################################
     
     if args.trainer == 'bic' and t>0 and flag != 1:
-        
-        train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 
-                                                     0, train_end, myTrainer.bias_correction_layer)
-        print("*********CURRENT EPOCH********** : %d"%epoch)
-        print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
-        print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
         
         bias_iterator = torch.utils.data.DataLoader(bias_dataset_loader, 
                                                     batch_size=args.batch_size, shuffle=True, **kwargs)
