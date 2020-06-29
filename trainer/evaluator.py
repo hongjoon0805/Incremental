@@ -13,8 +13,8 @@ from numpy.linalg import inv
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 
-logger = logging.getLogger('iCARL')
 
+# 3개 함수 모두 experiment에 넣자.
 def make_pred(out, start, end, step_size):
     pred = {}
     pred_5 = {}
@@ -85,7 +85,8 @@ class EvaluatorFactory():
 
     def __init__(self):
         pass
-
+    
+    # evaluator를 나누지 말고 trainer 정보만 넣어주자.
     @staticmethod
     def get_evaluator(testType="trainedClassifier", classes=1000, option='euclidean'):
         if testType == "trainedClassifier":
@@ -186,15 +187,11 @@ class GDA():
                 batch_size = data.shape[0]
                 total += data.shape[0]
 
-                # M_distance: NxC(start~end)
-                # features: NxD
-                # features - mean: NxC(start~end)xD
-                
-#                 out = -(features.data.unsqueeze(1) - self.class_means[:end].unsqueeze(0)).norm(2, 2)
-                
                 batch_vec = (features.data.unsqueeze(1) - self.class_means.unsqueeze(0))
                 temp = torch.matmul(batch_vec, self.precision)
                 out = -torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3)).squeeze()
+                
+                # experiment에 out만 넘겨주고 끝내자.
 
                 if mode == 'test' and end > step_size:
                     pred, pred_5 = make_pred(out, start, end, step_size)

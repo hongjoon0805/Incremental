@@ -25,6 +25,7 @@ class Trainer(trainer.GenericTrainer):
         super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         self.bias_correction_layer = BiasLayer()
+        self.bias_correction_layer_arr = []
         
         self.bias_optimizer = torch.optim.Adam(self.bias_correction_layer.parameters(), 0.001)
 
@@ -53,6 +54,7 @@ class Trainer(trainer.GenericTrainer):
         self.train_data_iterator.dataset.update_exemplar()
         self.train_data_iterator.dataset.task_change()
         self.test_data_iterator.dataset.task_change()
+        self.bias_correction_layer_arr.append(self.bias_correction_layer)
 
     def setup_training(self, lr):
         
@@ -108,11 +110,20 @@ class Trainer(trainer.GenericTrainer):
             loss_CE = self.loss(output, target)
             
             loss_KD = 0
+            score_arr = []
+            # distillation 할 때 bias를 correction 한 상태에서 distillation 해야한다.
             if tasknum > 0:
                 score = self.model_fixed(data)[:,:end].data
+                for idx, layer in enumerate(self.bias_correction_layer_arr):
+                    corrected_start = idx * self.args.step_size
+                    corrected_end = corrected_start + self.args.step_size
+                    corrected_score = layer(score[:,corrected_start:corrected_end])
+                    score_arr.append(corrected_score)
+                score_arr.append(score[:,start:end])
+                
+                score = torch.cat(score_arr, dim=1)
                 soft_target = F.softmax(score / T, dim=1)
                 output_log = F.log_softmax(output / T, dim=1)
-#                 loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                 loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
                 
             self.optimizer.zero_grad()

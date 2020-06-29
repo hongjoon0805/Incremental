@@ -44,7 +44,6 @@ dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
 
 if args.dataset == 'CIFAR100' or args.dataset == 'CIFAR10':
     loader = None
-    
 else:
     loader = dataset.loader
     
@@ -240,6 +239,7 @@ for t in range(tasknum):
                 t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
             
             if t>0:
+                ###################### 폐기처분 대상 ######################
                 train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
                 print("*********CURRENT EPOCH********** : %d"%epoch)
                 print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
@@ -256,6 +256,7 @@ for t in range(tasknum):
                 print("Test Classifier top-5 (Softmax, prev_new): %0.2f"%correct_5['prev_new'])
                 
             else:
+                ###################### 폐기처분 대상 ######################
                 train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
                 print("*********CURRENT EPOCH********** : %d"%epoch)
                 print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
@@ -294,7 +295,7 @@ for t in range(tasknum):
             print(myTrainer.bias_correction_layer.beta)
             
     if t>0:
-        
+        ###################### 폐기처분 대상 ######################
         if flag:
             print('Evaluation!')
         if args.trainer == 'bic':
@@ -334,6 +335,7 @@ for t in range(tasknum):
         results['cheat']['correct_5'].append(correct_5['cheat'])
         
     else:
+        ###################### 폐기처분 대상 ######################
         if flag:
             print('Evaluation!')
         
