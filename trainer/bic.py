@@ -110,20 +110,18 @@ class Trainer(trainer.GenericTrainer):
             loss_CE = self.loss(output, target)
             
             loss_KD = 0
-            score_arr = []
             # distillation 할 때 bias를 correction 한 상태에서 distillation 해야한다.
             if tasknum > 0:
-                score = self.model_fixed(data)[:,:end].data
-                for idx, layer in enumerate(self.bias_correction_layer_arr):
-                    corrected_start = idx * self.args.step_size
-                    corrected_end = corrected_start + self.args.step_size
-                    corrected_score = layer(score[:,corrected_start:corrected_end])
-                    score_arr.append(corrected_score)
-                score_arr.append(score[:,start:end])
+                end_KD = start
+                start_KD = end_KD - self.args.step_size
                 
-                score = torch.cat(score_arr, dim=1)
+                layer = self.bias_correction_layer_arr[-1] # last bias correction layer
+                
+                score = self.model_fixed(data)[:,:end_KD].data
+                score = torch.cat([score[:,:start_KD], layer(score[:,start_KD:end_KD])], dim=1)
+                
                 soft_target = F.softmax(score / T, dim=1)
-                output_log = F.log_softmax(output / T, dim=1)
+                output_log = F.log_softmax(output[:,:end_KD] / T, dim=1)
                 loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
                 
             self.optimizer.zero_grad()
