@@ -58,15 +58,16 @@ class Trainer(trainer.GenericTrainer):
 
     def setup_training(self, lr):
         
-        self.bias_correction_layer = BiasLayer()
-        self.bias_optimizer = torch.optim.Adam(self.bias_correction_layer.parameters(), 0.001)
-        
         for param_group in self.optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
             param_group['lr'] = lr
             self.current_lr = lr
         
         lr = lr/100
+        self.bias_correction_layer = BiasLayer()
+#         self.bias_optimizer = torch.optim.Adam(self.bias_correction_layer.parameters(), lr)
+        self.bias_optimizer = torch.optim.SGD(self.bias_correction_layer.parameters(), self.args.lr, momentum=self.args.momentum)
+        
         for param_group in self.bias_optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
             param_group['lr'] = lr
