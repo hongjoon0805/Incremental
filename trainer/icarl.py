@@ -78,17 +78,9 @@ class Trainer(trainer.GenericTrainer):
             data, target = data.cuda(), target.cuda()
             
             mask_new = target >= start
-            
-            y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
-
-            y_onehot.zero_()
-            target.unsqueeze_(1)
-            y_onehot.scatter_(1, target, 1)
         
             output = self.model(data)
-            
-            output_log = F.log_softmax(output[mask_new,start:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[mask_new,start:end], reduction='batchmean')
+            loss_CE = self.loss(output[mask_new,start:end], target[mask_new,start:end])
             
             loss_KD = 0
             if tasknum > 0:

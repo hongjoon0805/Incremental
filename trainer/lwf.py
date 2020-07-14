@@ -100,22 +100,14 @@ class Trainer(GenericTrainer):
         self.model.train()
         print("Epochs %d"%epoch)
         tasknum = self.train_data_iterator.dataset.t
-        for data, y, target in tqdm(self.train_data_iterator):
-            data, y, target = data.cuda(), y.cuda(), target.cuda()
+        end = self.train_data_iterator.dataset.end
+        start = end-self.args.step_size
+        for data, target in tqdm(self.train_data_iterator):
+            data, target = data.cuda(), target.cuda()
             
-            y_onehot = torch.FloatTensor(len(target), self.dataset.classes).cuda()
-
-            y_onehot.zero_()
-            target.unsqueeze_(1)
-            y_onehot.scatter_(1, target, 1)
         
             output = self.model(data)
-            
-            start = tasknum * self.args.step_size
-            end = (tasknum+1) * self.args.step_size
-            
-            output_log = F.log_softmax(output[:,start:end], dim=1)
-            loss_CE = F.kl_div(output_log, y_onehot[:,start:end])
+            loss_CE = self.loss(output[:,start:end], target[:,start:end])
             
             loss_KD = 0
             if tasknum > 0:
