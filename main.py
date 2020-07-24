@@ -276,6 +276,9 @@ for t in range(tasknum):
         t_classifier.update_mean(myTrainer.model, evaluator_iterator, train_end, args.step_size)
         print('Mean update finished')
     
+    #if args.trainer == 'wa':
+        
+    
     ############################################
     #        BIC bias correction train         #
     ############################################

@@ -24,6 +24,8 @@ class TrainerFactory():
             import trainer.icarl as trainer
         elif args.trainer == 'bic':
             import trainer.bic as trainer
+        elif args.trainer == 'wa':
+            import trainer.wa as trainer
         
         return trainer.Trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
     

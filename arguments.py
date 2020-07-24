@@ -51,7 +51,8 @@ def get_args():
                                  'il2m', 
                                  'bic', 
                                  'er_NMC', 
-                                 'coreset_NMC'], 
+                                 'coreset_NMC',
+                                 'wa'], 
                         help='(default=%(default)s)')
     
 #     parser = deepspeed.add_config_arguments(parser)
