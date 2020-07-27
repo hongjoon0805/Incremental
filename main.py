@@ -165,6 +165,8 @@ t_classifier = trainer.EvaluatorFactory.get_evaluator(testType, classes=dataset.
 
 # Loop that incrementally adds more and more classes
 
+print(args.step_size)
+
 train_start = 0
 train_end = args.base_classes
 test_start = 0
@@ -233,8 +235,9 @@ for t in range(tasknum):
             break
         else:
             myTrainer.train(epoch)
-        
-        if epoch % 5 == (5 - 1) and args.debug:
+        if args.trainer == 'wa' and t > 0:
+            myTrainer.weight_align()
+        if epoch % 50 == (50 - 1) and args.debug:
             if args.trainer == 'icarl':
                 t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
             
@@ -276,7 +279,7 @@ for t in range(tasknum):
         t_classifier.update_mean(myTrainer.model, evaluator_iterator, train_end, args.step_size)
         print('Mean update finished')
     
-    #if args.trainer == 'wa':
+    
         
     
     ############################################

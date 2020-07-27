@@ -26,20 +26,20 @@ class Trainer(trainer.GenericTrainer):
                     print("Changing learning rate from %0.4f to %0.4f"%(self.current_lr,
                                                                         self.current_lr * self.args.gammas[temp]))
                     self.current_lr *= self.args.gammas[temp]
-     
+
     def increment_classes(self):
         
         self.train_data_iterator.dataset.update_exemplar()
         self.train_data_iterator.dataset.task_change()
         self.test_data_iterator.dataset.task_change()
-     
+
     def setup_training(self, lr):
-       
+
         for param_group in self.optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
             param_group['lr'] = lr
             self.current_lr = lr
-       
+
             
     def update_frozen_model(self):
         self.model.eval()
@@ -79,7 +79,6 @@ class Trainer(trainer.GenericTrainer):
             loss_CE = self.loss(output, target)
             
             loss_KD = 0
-            # distillation 할 때 bias를 correction 한 상태에서 distillation 해야한다.
             if tasknum > 0:
                 end_KD = start
                 start_KD = end_KD - self.args.step_size
@@ -94,6 +93,30 @@ class Trainer(trainer.GenericTrainer):
             (lamb*loss_KD + (1-lamb)*loss_CE).backward()
             self.optimizer.step()
             
-            # weight 0이하인걸 없애고
-            # asd[asd<0] = 0
-            print(model.fc)
+            # weight cliping 0인걸 없애기
+            weight = self.model.module.fc.weight.data
+            #print(weight.shape)
+            weight[weight < 0] = 0
+
+        #for p in self.model.module.fc.weight:
+            #print(p)
+            #print((p==0).sum())
+
+    def weight_align(self):
+        end = self.train_data_iterator.dataset.end
+        start = end-self.args.step_size
+        weight = self.model.module.fc.weight.data
+        
+        prev = weight[:start, :]
+        new = weight[start:end, :]
+        print(prev.shape, new.shape)
+        mean_prev = torch.mean(torch.norm(prev, dim=1)).item()
+        mean_new = torch.mean(torch.norm(new, dim=1)).item()
+
+        gamma = mean_prev/mean_new
+        print(mean_prev, mean_new, gamma)
+        new = new * gamma
+        result = torch.cat((prev, new), dim=0)
+        weight[:end, :] = result
+        print(torch.mean(torch.norm(self.model.module.fc.weight.data[:start], dim=1)).item())
+        print(torch.mean(torch.norm(self.model.module.fc.weight.data[start:end], dim=1)).item())
