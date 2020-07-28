@@ -8,8 +8,8 @@ class ModelFactory():
         
         if dataset == 'CIFAR100':
             
-            import networks.resnet18 as res
-            return res.resnet18(100)
+            import networks.resnet32 as res
+            return res.resnet32(100)
         
         if dataset == 'CIFAR10':
             

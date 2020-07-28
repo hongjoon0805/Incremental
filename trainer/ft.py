@@ -88,3 +88,23 @@ class Trainer(trainer.GenericTrainer):
             self.optimizer.zero_grad()
             (loss_CE).backward()
             self.optimizer.step()
+            
+    def weight_align(self):
+        end = self.train_data_iterator.dataset.end
+        start = end-self.args.step_size
+        weight = self.model.module.fc.weight.data
+        
+        prev = weight[:start, :]
+        new = weight[start:end, :]
+        print(prev.shape, new.shape)
+        mean_prev = torch.mean(torch.norm(prev, dim=1)).item()
+        mean_new = torch.mean(torch.norm(new, dim=1)).item()
+
+        gamma = mean_prev/mean_new
+        print(mean_prev, mean_new, gamma)
+        new = new * gamma
+        result = torch.cat((prev, new), dim=0)
+        weight[:end, :] = result
+        print(torch.mean(torch.norm(self.model.module.fc.weight.data[:start], dim=1)).item())
+        print(torch.mean(torch.norm(self.model.module.fc.weight.data[start:end], dim=1)).item())
+

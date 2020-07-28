@@ -161,7 +161,7 @@ class IncrementalLoader(td.Dataset):
             return self.end_idx
     
     def __getitem__(self, index):
-        
+#         time.sleep(0.1)
         if self.mode == 'train':
             if index >= self.current_len: # for bic, ft, icarl, il2m
                 index = self.exemplar[index - self.current_len]
@@ -202,7 +202,7 @@ class ResultLoader(td.Dataset):
         return self.labels.shape[0]
     
     def __getitem__(self, index):
-        
+#         time.sleep(0.1)
         img = self.data[index]
         try:
             img = Image.fromarray(img)

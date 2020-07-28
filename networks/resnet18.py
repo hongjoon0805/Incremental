@@ -159,3 +159,4 @@ def _resnet(block, layers, num_classes):
 def resnet18(num_classes):
     
     return _resnet(BasicBlock, [2, 2, 2, 2], num_classes)
+

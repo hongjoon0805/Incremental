@@ -235,9 +235,8 @@ for t in range(tasknum):
             break
         else:
             myTrainer.train(epoch)
-        if args.trainer == 'wa' and t > 0:
-            myTrainer.weight_align()
-        if epoch % 50 == (50 - 1) and args.debug:
+            
+        if epoch % 10 == (10 - 1) and args.debug:
             if args.trainer == 'icarl':
                 t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
             
@@ -280,7 +279,8 @@ for t in range(tasknum):
         print('Mean update finished')
     
     
-        
+    if args.trainer == 'wa' and t > 0:
+        myTrainer.weight_align()   
     
     ############################################
     #        BIC bias correction train         #
@@ -391,13 +391,13 @@ for t in range(tasknum):
     
     if args.trainer == 'ssil':
         train_start = train_end - args.step_size
-    if args.trainer == 'ssil' or args.trainer == 'ft' or args.trainer == 'icarl':
+    if args.trainer == 'ssil' or args.trainer == 'ft' or args.trainer == 'icarl' or args.trainer == 'wa':
         torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
     if args.trainer == 'bic' :
         torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
         torch.save(myTrainer.bias_correction_layer.state_dict(), 
                    './models/trained_model/' + log_name + '_bias' + '_task_{}.pt'.format(t))
-        
+    
     myTrainer.increment_classes()
     evaluate_dataset_loader.update_exemplar()
     evaluate_dataset_loader.task_change()

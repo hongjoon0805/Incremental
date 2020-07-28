@@ -83,10 +83,10 @@ class CIFAR10(Dataset):
             transforms.Normalize(mean, std),
             ])
 
-        train_dataset = datasets.CIFAR10("~/dat", train=True, transform=self.train_transform, download=True)
+        train_dataset = datasets.CIFAR10("../dat", train=True, transform=self.train_transform, download=True)
         self.train_data = train_dataset.train_data
         self.train_labels = np.array(train_dataset.train_labels)
-        test_dataset = datasets.CIFAR10("~/dat", train=False, transform=self.test_transform, download=True)
+        test_dataset = datasets.CIFAR10("../dat", train=False, transform=self.test_transform, download=True)
         self.test_data = test_dataset.test_data
         self.test_labels = np.array(test_dataset.test_labels)        
 
@@ -109,10 +109,10 @@ class CIFAR100(Dataset):
             transforms.Normalize(mean, std),
             ])
 
-        train_dataset = datasets.CIFAR100("~/dat", train=True, transform=self.train_transform, download=True)
+        train_dataset = datasets.CIFAR100("../dat", train=True, transform=self.train_transform, download=True)
         self.train_data = train_dataset.train_data
         self.train_labels = np.array(train_dataset.train_labels)
-        test_dataset = datasets.CIFAR100("~/dat", train=False, transform=self.test_transform, download=True)
+        test_dataset = datasets.CIFAR100("../dat", train=False, transform=self.test_transform, download=True)
         self.test_data = test_dataset.test_data
         self.test_labels = np.array(test_dataset.test_labels)
 
@@ -137,8 +137,8 @@ class Imagenet(Dataset):
             transforms.Normalize(mean, std),
             ])
         
-        train_data = datasets.ImageFolder("~/dat/Imagenet/train", transform=self.train_transform)
-        test_data = datasets.ImageFolder("~/dat/Imagenet/val", transform=self.test_transform)
+        train_data = datasets.ImageFolder("../dat/Imagenet/train", transform=self.train_transform)
+        test_data = datasets.ImageFolder("../dat/Imagenet/val", transform=self.test_transform)
         self.loader = train_data.loader
         
         self.train_data = []
@@ -176,7 +176,7 @@ class VggFace2_1K(Dataset):
             transforms.ToTensor(),
             ])
         
-        train_data, train_labels, test_data, test_labels, loader = make_dataset("~/dat/vggface2/train", self.classes)
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../dat/vggface2/train", self.classes)
         
         self.train_data = train_data
         self.train_labels = train_labels
@@ -201,7 +201,7 @@ class VggFace2_5K(Dataset):
             transforms.ToTensor(),
             ])
         
-        train_data, train_labels, test_data, test_labels, loader = make_dataset("~/dat/vggface2/train", self.classes)
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../dat/vggface2/train", self.classes)
         
         self.train_data = train_data
         self.train_labels = train_labels
@@ -225,7 +225,7 @@ class Google_Landmark_v2_1K(Dataset):
             transforms.ToTensor(),
             ])
         
-        train_data, train_labels, test_data, test_labels, loader = make_dataset("~/dat/google-landmark-v2/train_10k", self.classes)
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../dat/google-landmark-v2/train_10k", self.classes)
         
         self.train_data = train_data
         self.train_labels = train_labels
@@ -249,7 +249,7 @@ class Google_Landmark_v2_10K(Dataset):
             transforms.ToTensor(),
             ])
         
-        train_data, train_labels, test_data, test_labels, loader = make_dataset("~/dat/google-landmark-v2/train_10k", self.classes, test_img_per_class=10)
+        train_data, train_labels, test_data, test_labels, loader = make_dataset("../dat/google-landmark-v2/train_10k", self.classes, test_img_per_class=10)
         
         self.train_data = train_data
         self.train_labels = train_labels

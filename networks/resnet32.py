@@ -100,7 +100,7 @@ class CifarResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, feature_return=False):
 
         x = self.conv_1_3x3(x)
         x = F.relu(self.bn_1(x), inplace=True)
@@ -109,15 +109,14 @@ class CifarResNet(nn.Module):
         x = self.stage_3(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
+        feature = x / torch.norm(x, 2, 1).unsqueeze(1)
         x = self.fc(x)
-
+        if feature_return:
+            return x, feature
         return x
 
 
 def resnet32(num_classes=100):
-    """Constructs a ResNet-32 model for CIFAR-10 (by default)
-    Args:
-      num_classes (uint): number of classes
-    """
+    
     model = CifarResNet(ResNetBasicblock, 32, num_classes)
     return model

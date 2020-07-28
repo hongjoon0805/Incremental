@@ -93,6 +93,8 @@ class Trainer(trainer.GenericTrainer):
             (lamb*loss_KD + (1-lamb)*loss_CE).backward()
             self.optimizer.step()
             
+            self.model.module.fc.bias.data[:] = 0
+            
             # weight cliping 0인걸 없애기
             weight = self.model.module.fc.weight.data
             #print(weight.shape)
