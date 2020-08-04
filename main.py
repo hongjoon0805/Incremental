@@ -33,7 +33,7 @@ log_name = '{}_{}_{}_{}_memsz_{}_base_{}_step_{}_batch_{}_epoch_{}'.format(
 if args.trainer == 'ssil':
     log_name += '_replay_{}'.format(args.replay_batch_size)
 
-if args.trainer == 'ssil' or args.trainer == 'ft' or args.trainer == 'il2m':
+if args.trainer == 'ssil' or 'ft' in  args.trainer or args.trainer == 'il2m':
     log_name += '_factor_{}'.format(args.factor)
 if args.prev_new:
     log_name += '_prev_new'
@@ -156,7 +156,7 @@ if args.trainer == 'icarl':
     testType = "generativeClassifier"
 elif args.trainer == 'il2m':
     testType = 'il2m'
-elif args.trainer == 'bic':
+elif 'bic' in args.trainer:
     testType = 'bic'
 else:
     testType = 'trainedClassifier'
@@ -197,7 +197,7 @@ for t in range(tasknum):
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
     # Add new classes to the train, and test iterator
     lr = args.lr
-    if args.trainer == 'ssil' or args.trainer == 'ft':
+    if args.trainer == 'ssil' or 'ft' in  args.trainer:
         lr = args.lr / (t+1)
         if t==1:
             total_epochs = args.nepochs // args.factor
@@ -279,14 +279,14 @@ for t in range(tasknum):
         print('Mean update finished')
     
     
-    if args.trainer == 'wa' and t > 0:
+    if t > 0 and (args.trainer == 'ft_wa' or args.trainer == 'wa'):
         myTrainer.weight_align()   
     
     ############################################
     #        BIC bias correction train         #
     ############################################
     
-    if args.trainer == 'bic' and t>0 and flag != 1:
+    if 'bic' in args.trainer and t>0 and flag != 1:
         
         bias_iterator = torch.utils.data.DataLoader(bias_dataset_loader, 
                                                     batch_size=args.batch_size, shuffle=True, **kwargs)
@@ -304,7 +304,7 @@ for t in range(tasknum):
         ###################### 폐기처분 대상 ######################
         if flag:
             print('Evaluation!')
-        if args.trainer == 'bic':
+        if 'bic' in args.trainer:
             train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 
                                                      0, train_end, myTrainer.bias_correction_layer)
             print("*********CURRENT EPOCH********** : %d"%epoch)
@@ -345,9 +345,9 @@ for t in range(tasknum):
         if flag:
             print('Evaluation!')
         
-        if args.trainer == 'bic':
+        if  'bic' in args.trainer:
             train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 
-                                                     train_start, train_end, myTrainer.bias_correction_layer,)
+                                                     train_start, train_end, myTrainer.bias_correction_layer)
             print("*********CURRENT EPOCH********** : %d"%epoch)
             print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
             print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
@@ -377,7 +377,7 @@ for t in range(tasknum):
         iterator = torch.utils.data.DataLoader(dataset_loader,
                                                batch_size=args.batch_size, **kwargs)
         
-        if args.trainer == 'bic':
+        if 'bic' in args.trainer:
             results['task_soft_1'][t][i], results['task_soft_5'][t][i] = t_classifier.evaluate(myTrainer.model, 
                                                                                                iterator, start, end,
                                                                                               myTrainer.bias_correction_layer)
@@ -391,9 +391,9 @@ for t in range(tasknum):
     
     if args.trainer == 'ssil':
         train_start = train_end - args.step_size
-    if args.trainer == 'ssil' or args.trainer == 'ft' or args.trainer == 'icarl' or args.trainer == 'wa':
+    if args.trainer == 'ssil' or 'ft' in args.trainer or args.trainer == 'icarl' or args.trainer == 'wa':
         torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
-    if args.trainer == 'bic' :
+    if 'bic' in args.trainer:
         torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
         torch.save(myTrainer.bias_correction_layer.state_dict(), 
                    './models/trained_model/' + log_name + '_bias' + '_task_{}.pt'.format(t))

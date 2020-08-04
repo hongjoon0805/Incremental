@@ -16,32 +16,6 @@ from tqdm import tqdm
 
 import networks
 
-class GenericTrainer:
-    '''
-    Base class for trainer; to implement a new training routine, inherit from this. 
-    '''
-
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
-        self.train_data_iterator = trainDataIterator
-        self.test_data_iterator = testDataIterator
-        self.model = model
-        self.args = args
-        self.dataset = dataset
-        self.train_loader = self.train_data_iterator.dataset
-        self.older_classes = []
-        self.optimizer = optimizer
-        self.model_fixed = copy.deepcopy(self.model)
-        self.active_classes = []
-        for param in self.model_fixed.parameters():
-            param.requires_grad = False
-        self.models = []
-        self.current_lr = args.lr
-        self.all_classes = list(range(dataset.classes))
-        self.all_classes.sort(reverse=True)
-        self.model_single = copy.deepcopy(self.model)
-        self.optimizer_single = None
-
-
 class Trainer(GenericTrainer):
     def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
         super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
@@ -81,17 +55,6 @@ class Trainer(GenericTrainer):
         for param in self.model_fixed.parameters():
             param.requires_grad = False
         self.models.append(self.model_fixed)
-
-    def get_model(self):
-        myModel = networks.ModelFactory.get_model(self.args.dataset).cuda()
-        optimizer = torch.optim.SGD(myModel.parameters(), self.args.lr, momentum=self.args.momentum,
-                                    weight_decay=self.args.decay, nesterov=True)
-        myModel.eval()
-
-        self.current_lr = self.args.lr
-
-        self.model_single = myModel
-        self.optimizer_single = optimizer
 
     def train(self, epoch):
         

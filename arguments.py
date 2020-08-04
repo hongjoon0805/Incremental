@@ -24,7 +24,7 @@ def get_args():
     parser.add_argument('--nepochs', type=int, default=100, help='Number of epochs for each increment')
     parser.add_argument('--workers', type=int, default=32, help='Number of workers in Dataloaders')
     parser.add_argument('--base-classes', type=int, default=100, help='Number of base classes')
-    parser.add_argument('--factor', type=int, default=4, help='Number of samples in BNN')
+    parser.add_argument('--factor', type=int, default=4, help='Epoch decay factor')
     parser.add_argument('--date', type=str, default='', help='(default=%(default)s)')
     parser.add_argument('--debug', type=int, default=1, help='Use debug')
     parser.add_argument('--benchmark', action='store_true', default=False, help='Use cudnn.benchmark')
@@ -47,12 +47,14 @@ def get_args():
                         choices=['lwf', 
                                  'ssil', 
                                  'ft',
+                                 'ft_bic',
                                  'icarl', 
                                  'il2m', 
                                  'bic', 
                                  'er_NMC', 
                                  'coreset_NMC',
-                                 'wa'], 
+                                 'wa',
+                                 'ft_wa'], 
                         help='(default=%(default)s)')
     
 #     parser = deepspeed.add_config_arguments(parser)

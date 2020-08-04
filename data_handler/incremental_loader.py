@@ -69,8 +69,6 @@ class IncrementalLoader(td.Dataset):
         self.start = self.end
         self.end += self.step_size
         
-        print('dataset start, end: ',self.start, self.end)
-        
         self.start_idx = np.argmin(self.labelsNormal<self.start) # start data index
         self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index
         if self.end_idx == 0:
@@ -79,7 +77,7 @@ class IncrementalLoader(td.Dataset):
         self.tr_idx = range(self.start_idx, self.end_idx)
         
         # validation set for bic
-        if self.approach == 'bic' and self.start < self.total_classes and self.mode != 'test':
+        if 'bic' in self.approach and self.start < self.total_classes and self.mode != 'test':
             val_per_class = (self.validation_buffer_size//2) // self.step_size
             self.tr_idx = []
             for i in range(self.step_size):
@@ -87,19 +85,11 @@ class IncrementalLoader(td.Dataset):
                 start = self.start_point[self.start + i]
                 self.validation_buffer += range(end-val_per_class, end)
                 self.tr_idx += range(start, end-val_per_class)
-                
-            print('exemplar, validation: ', len(self.exemplar), len(self.validation_buffer))
-        
-            arr = []
-            for idx in self.validation_buffer:
-                arr.append(self.labelsNormal[idx])
-            print(arr)
-        
         
         self.len = len(self.tr_idx)
         self.current_len = self.len
         
-        if self.approach == 'ft' or self.approach == 'icarl' or self.approach == 'bic' or self.approach =='il2m':
+        if self.approach == 'ft' or self.approach == 'icarl' or 'bic' in self.approach  or self.approach =='il2m':
             self.len += len(self.exemplar)
         
     def update_exemplar(self):
@@ -132,7 +122,7 @@ class IncrementalLoader(td.Dataset):
             self.exemplar += arr
         
         # validation set for bic
-        if self.approach == 'bic':
+        if 'bic' in self.approach:
             self.bic_memory_buffer = copy.deepcopy(self.memory_buffer)
             self.validation_buffer = []
             validation_per_class = (self.validation_buffer_size//2) // self.end
