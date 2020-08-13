@@ -12,7 +12,7 @@ from torch.autograd import Variable
 import torchvision.transforms.functional as trnF
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, transform=None, loader = None, shuffle_idx=None, base_classes=50, approach = 'bic'):
+    def __init__(self, data, labels, classes, step_size, mem_sz, mode, transform=None, loader = None, shuffle_idx=None, base_classes=50, approach = 'bic', model=None):
         if shuffle_idx is not None:
             # label shuffle
             print("Label shuffled")
@@ -20,6 +20,8 @@ class IncrementalLoader(td.Dataset):
         
         sort_index = np.argsort(labels)
         self.data = data[sort_index]
+        
+        self.model = model
         
         labels = np.array(labels)
         self.labels = labels[sort_index]
@@ -99,6 +101,27 @@ class IncrementalLoader(td.Dataset):
 
         for i in range(self.start,self.end):
             start_idx = self.start_point[i]
+            # herding selection ,  distance order    insert
+            """img_list = []
+            end_idx = self.end_point[i]
+            for idx in range(start_idx, end_idx):
+                img = self.data[idx]
+                try:
+                    img = Image.fromarray(img)
+                except:
+                    img = self.loader(img)
+
+                if self.transform is not None:
+                    img = self.transform(img)
+               img_list.append(img)
+            img_list = np.array(img_list)
+            _, feature = self.mode(img_list, feature_return=True)
+            # distance measure
+            # sort    0~end_idx - start_idx
+            # make list,   start_idx + sorted index
+            # self.memory_buffer[i] += list
+            """
+            # ------------------------
             self.memory_buffer[i] += range(start_idx, start_idx+buffer_per_class)
         # second, throw away the previous samples
         if buffer_per_class > 0:
@@ -120,6 +143,7 @@ class IncrementalLoader(td.Dataset):
         self.exemplar = []
         for arr in self.memory_buffer:
             self.exemplar += arr
+        
         
         # validation set for bic
         if 'bic' in self.approach:
@@ -147,6 +171,8 @@ class IncrementalLoader(td.Dataset):
             return self.len
         elif self.mode == 'bias':
             return len(self.validation_buffer)
+        elif self.mode == 'b-ft':
+            return len(self.exemplar)
         else:
             return self.end_idx
     
@@ -160,6 +186,9 @@ class IncrementalLoader(td.Dataset):
             
         elif self.mode == 'bias': # for bic bias correction
             index = self.validation_buffer[index]
+        elif self.mode == 'b-ft':
+            index = self.exemplar[index]
+            
         img = self.data[index]
         
         try:

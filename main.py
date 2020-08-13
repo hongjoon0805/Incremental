@@ -60,6 +60,10 @@ torch.cuda.manual_seed(seed)
 # Loader used for training data
 shuffle_idx = shuffle(np.arange(dataset.classes), random_state=args.seed)
 print(shuffle_idx)
+
+myModel = networks.ModelFactory.get_model(args.dataset)
+myModel = torch.nn.DataParallel(myModel).cuda()
+
 train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
                                                       dataset.train_labels,
                                                       dataset.classes,
@@ -70,7 +74,8 @@ train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
                                                       loader=loader,
                                                       shuffle_idx = shuffle_idx,
                                                       base_classes = args.base_classes,
-                                                      approach = args.trainer
+                                                      approach = args.trainer,
+                                                      model = myModel
                                                       )
 # Loader for evaluation
 evaluate_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
@@ -83,7 +88,8 @@ evaluate_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
                                                          loader=loader,
                                                          shuffle_idx = shuffle_idx,
                                                          base_classes = args.base_classes,
-                                                         approach = 'ft'
+                                                         approach = 'ft',
+                                                         model = myModel
                                                         )
 
 # Loader for test data.
@@ -97,7 +103,8 @@ test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
                                                      loader=loader,
                                                      shuffle_idx = shuffle_idx,
                                                      base_classes = args.base_classes,
-                                                     approach = args.trainer
+                                                     approach = args.trainer,
+                                                     model = myModel
                                                      )
 
 # Loader for training bias correction layer in Large-scale Incremental Learning
@@ -111,7 +118,8 @@ bias_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
                                                      loader=loader,
                                                      shuffle_idx = shuffle_idx,
                                                      base_classes = args.base_classes,
-                                                     approach = args.trainer
+                                                     approach = args.trainer,
+                                                     model = myModel
                                                      )
 
 
@@ -141,8 +149,6 @@ print(torch.cuda.device_count())
 if torch.cuda.device_count() > 1:
     print("Let's use", torch.cuda.device_count(), "GPUs!")
 
-myModel = networks.ModelFactory.get_model(args.dataset)
-myModel = torch.nn.DataParallel(myModel).cuda()
 
 # Define the optimizer used in the experiment
 optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
