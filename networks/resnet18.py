@@ -142,8 +142,8 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        feature = x / torch.norm(x, 2, 1).unsqueeze(1)
-        #feature = x
+#         feature = x / torch.norm(x, 2, 1).unsqueeze(1)
+        feature = x
         x = self.fc(x)
         
         if feature_return:

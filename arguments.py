@@ -54,7 +54,13 @@ def get_args():
                                  'er_NMC', 
                                  'coreset_NMC',
                                  'wa',
-                                 'ft_wa'], 
+                                 'ft_wa',
+                                 'ft_bic_focal'], 
+                        help='(default=%(default)s)')
+    parser.add_argument('--distill', default='None', type=str, required=False,
+                        choices=['kd', 
+                                 'feature_l2',
+                                'feature_cos'], 
                         help='(default=%(default)s)')
     
 #     parser = deepspeed.add_config_arguments(parser)

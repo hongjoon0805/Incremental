@@ -29,6 +29,8 @@ log_name = '{}_{}_{}_{}_memsz_{}_base_{}_step_{}_batch_{}_epoch_{}'.format(
     args.nepochs,
 )
 
+if args.distill != 'None':
+    log_name += '_distill_{}'.format(args.distill)
 
 if args.trainer == 'ssil':
     log_name += '_replay_{}'.format(args.replay_batch_size)

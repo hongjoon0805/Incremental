@@ -51,7 +51,6 @@ test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
 
 kwargs = {'num_workers': args.workers, 'pin_memory': True}
 test_iterator = torch.utils.data.DataLoader(test_dataset_loader, batch_size=100, shuffle=False, **kwargs)
-
 myModel = networks.ModelFactory.get_model(args.dataset)
 myModel = torch.nn.DataParallel(myModel).cuda()
 
@@ -60,7 +59,7 @@ start = 0
 end = args.step_size
 
 for t in range(10):
-    name = 'models/trained_model/200729_FT_BIC_Imagenet_ft_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_%d.pt'
+    name = 'models/trained_model/200810_FIT_BIC_Imagenet_bic_0_memsz_20000_base_100_step_100_batch_256_epoch_100_distill_feature_cos_task_%d.pt'
 
     myModel.load_state_dict(torch.load(name%t))
     

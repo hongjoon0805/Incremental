@@ -5,7 +5,6 @@ import logging
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
@@ -34,13 +33,12 @@ class Trainer(trainer.GenericTrainer):
         self.test_data_iterator.dataset.task_change()
 
     def setup_training(self, lr):
-
+        
         for param_group in self.optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
             param_group['lr'] = lr
             self.current_lr = lr
 
-            
     def update_frozen_model(self):
         self.model.eval()
         self.model_fixed = copy.deepcopy(self.model)
@@ -59,8 +57,6 @@ class Trainer(trainer.GenericTrainer):
         end = self.train_data_iterator.dataset.end
         start = end-self.args.step_size
         
-        lamb = start / end
-        
         for data, target in tqdm(self.train_data_iterator):
             data, target = data.cuda(), target.cuda()
             
@@ -69,45 +65,20 @@ class Trainer(trainer.GenericTrainer):
             
             loss_KD = 0
             if tasknum > 0:
-                end_KD = start
-                start_KD = end_KD - self.args.step_size
+                score = self.model_fixed(data).data
+                loss_KD = torch.zeros(tasknum).cuda()
+                for t in range(tasknum):
+                    
+                    # local distillation
+                    start_KD = (t) * self.args.step_size
+                    end_KD = (t+1) * self.args.step_size
+
+                    soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
+                    output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
+                    loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                 
-                score = self.model_fixed(data)[:,:end_KD].data
-                
-                soft_target = F.softmax(score / T, dim=1)
-                output_log = F.log_softmax(output[:,:end_KD] / T, dim=1)
-                loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+                loss_KD = loss_KD.sum()
                 
             self.optimizer.zero_grad()
-            (lamb*loss_KD + (1-lamb)*loss_CE).backward()
+            (loss_KD + loss_CE).backward()
             self.optimizer.step()
-            
-            self.model.module.fc.bias.data[:] = 0
-            
-            # weight cliping 0인걸 없애기
-            weight = self.model.module.fc.weight.data
-            #print(weight.shape)
-            weight[weight < 0] = 0
-
-        #for p in self.model.module.fc.weight:
-            #print(p)
-            #print((p==0).sum())
-
-    def weight_align(self):
-        end = self.train_data_iterator.dataset.end
-        start = end-self.args.step_size
-        weight = self.model.module.fc.weight.data
-        
-        prev = weight[:start, :]
-        new = weight[start:end, :]
-        print(prev.shape, new.shape)
-        mean_prev = torch.mean(torch.norm(prev, dim=1)).item()
-        mean_new = torch.mean(torch.norm(new, dim=1)).item()
-
-        gamma = mean_prev/mean_new
-        print(mean_prev, mean_new, gamma)
-        new = new * gamma
-        result = torch.cat((prev, new), dim=0)
-        weight[:end, :] = result
-        print(torch.mean(torch.norm(self.model.module.fc.weight.data[:start], dim=1)).item())
-        print(torch.mean(torch.norm(self.model.module.fc.weight.data[start:end], dim=1)).item())
