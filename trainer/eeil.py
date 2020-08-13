@@ -43,11 +43,12 @@ class Trainer(trainer.GenericTrainer):
         self.train_data_iterator.dataset.update_exemplar()
         self.train_data_iterator.dataset.mode = 'eeil'
         # balanced fine tuning - exemplar가 new old 개수 동일하게 되어있는상태
-        schedule = np.array(args.schedule)
-        
-        for epoch in range(args.bftepoch):
+        schedule = np.array(self.args.schedule)
+        #bftepoch = self.args.bftepoch
+        bftepoch = int(self.args.nepoch*0.75)
+        for epoch in range(bftepoch):
             self.update_bft_lr(epoch, schedule)
-            self.train(bft=True)
+            self.train(epoch, bft=True)
         
         self.train_data_iterator.dataset.mode = 'train'
         self.train_data_iterator.dataset.task_change()
@@ -60,8 +61,8 @@ class Trainer(trainer.GenericTrainer):
             param_group['lr'] = lr
             self.current_lr = lr
             
-        lr = lr/100
-        self.bft_optimizer = torch.optim.SGD(self.model.parameters(), self.args.lr, momentum=self.args.momentum)
+        lr = lr/10
+        self.bft_optimizer = torch.optim.SGD(self.model.parameters(), self.args.lr/10, momentum=self.args.momentum)
         """ # why this code?
         for param_group in self.bft_optimizer.param_groups:
             print("Setting LR to %0.4f"%lr)
@@ -109,6 +110,7 @@ class Trainer(trainer.GenericTrainer):
                         loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                     loss_KD = loss_KD.sum()
                 else:
+                    score = self.model(data).data
                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
                     loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
