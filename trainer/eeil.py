@@ -39,18 +39,7 @@ class Trainer(trainer.GenericTrainer):
                     self.current_lr *= self.args.gammas[temp]
     
     def increment_classes(self):
-        
         self.train_data_iterator.dataset.update_exemplar()
-        self.train_data_iterator.dataset.mode = 'eeil'
-        # balanced fine tuning - exemplar가 new old 개수 동일하게 되어있는상태
-        schedule = np.array(self.args.schedule)
-        #bftepoch = self.args.bftepoch
-        bftepoch = int(self.args.nepoch*0.75)
-        for epoch in range(bftepoch):
-            self.update_bft_lr(epoch, schedule)
-            self.train(epoch, bft=True)
-        
-        self.train_data_iterator.dataset.mode = 'train'
         self.train_data_iterator.dataset.task_change()
         self.test_data_iterator.dataset.task_change()
 
@@ -75,7 +64,20 @@ class Trainer(trainer.GenericTrainer):
         self.model_fixed.eval()
         for param in self.model_fixed.parameters():
             param.requires_grad = False
-
+    
+    def balance_fine_tune(self):
+        self.train_data_iterator.dataset.update_bft_buffer()
+        self.train_data_iterator.dataset.mode = 'b-ft'
+        # balanced fine tuning - exemplar가 new old 개수 동일하게 되어있는상태
+        schedule = np.array(self.args.schedule)
+        #bftepoch = self.args.bftepoch
+        bftepoch = int(self.args.nepochs*0.75)
+        for epoch in range(bftepoch):
+            self.update_bft_lr(epoch, schedule)
+            self.train(epoch, bft=True)
+        
+        self.train_data_iterator.dataset.mode = 'train'
+    
     def train(self, epoch, bft=False):
         
         T=2

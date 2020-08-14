@@ -57,6 +57,7 @@ class IncrementalLoader(td.Dataset):
         self.memory_buffer = []
         self.exemplar = []
         self.validation_buffer = []
+        self.bft_buffer = []
         self.start_point = []
         self.end_point = []
         for i in range(classes):
@@ -93,7 +94,29 @@ class IncrementalLoader(td.Dataset):
         
         if self.approach == 'ft' or self.approach == 'icarl' or 'bic' in self.approach  or self.approach =='il2m':
             self.len += len(self.exemplar)
+            
+    def update_bft_buffer(self):
+        self.bft_buffer = copy.deepcopy(self.memory_buffer)
+        min_len = 1e8
+        for arr in self.bft_buffer:
+            min_len = min(min_len, len(arr))
+
+        #buffer_per_class = math.ceil(self.mem_sz / (self.end-self.step_size))
+        buffer_per_class = min_len
         
+        for i in range(self.start, self.end):
+            start_idx = self.start_point[i]
+            end_idx = self.end_point[i]
+            idx = shuffle(np.arange(end_idx - start_idx), random_state = self.t)
+            self.bft_buffer[i] += range(start_idx, start_idx+buffer_per_class)
+        for arr in self.bft_buffer:
+            if len(arr) > buffer_per_class:
+                arr.pop()
+
+        self.bft_exemplar = []
+        for arr in self.bft_buffer:
+            self.bft_exemplar += arr
+            
     def update_exemplar(self):
         
         buffer_per_class = math.ceil(self.mem_sz / self.end)
@@ -187,7 +210,7 @@ class IncrementalLoader(td.Dataset):
         elif self.mode == 'bias': # for bic bias correction
             index = self.validation_buffer[index]
         elif self.mode == 'b-ft':
-            index = self.exemplar[index]
+            index = self.bft_exemplar[index]
             
         img = self.data[index]
         

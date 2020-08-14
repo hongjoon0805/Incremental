@@ -23,7 +23,7 @@ class BiasLayer(nn.Module):
 class Trainer(trainer.GenericTrainer):
     def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
         super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
-        self.loss = torch.nn.CrossEntropyLoss(reduction='none')
+        self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         self.bias_correction_layer = BiasLayer()
         self.bias_correction_layer_arr = []
         
@@ -112,7 +112,9 @@ class Trainer(trainer.GenericTrainer):
             else:
                 alpha = 1
                 gamma = 2
-                loss_CE = self.loss(output[:,:end], target)
+                loss = torch.nn.CrossEntropyLoss(reduction='none')
+                #loss_CE = torch.nn.CrossEntropyLoss(output[:,:end], target, reduction='none')
+                loss_CE = loss(output[:, :end], target)
                 pt = torch.exp(-loss_CE)
                 loss_focal = (alpha * (1-pt)**gamma * loss_CE).mean()
             

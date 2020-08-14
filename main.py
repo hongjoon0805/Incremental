@@ -290,6 +290,9 @@ for t in range(tasknum):
     if t > 0 and (args.trainer == 'ft_wa' or args.trainer == 'wa'):
         myTrainer.weight_align()   
     
+    if t > 0 and args.trainer == 'eeil':
+        myTrainer.balance_fine_tune()
+    
     ############################################
     #        BIC bias correction train         #
     ############################################

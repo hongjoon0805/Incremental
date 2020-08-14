@@ -55,7 +55,8 @@ def get_args():
                                  'coreset_NMC',
                                  'wa',
                                  'ft_wa',
-                                 'ft_bic_focal'], 
+                                 'ft_bic_focal',
+                                 'eeil'], 
                         help='(default=%(default)s)')
     parser.add_argument('--distill', default='None', type=str, required=False,
                         choices=['kd', 
