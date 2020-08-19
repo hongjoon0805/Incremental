@@ -22,7 +22,7 @@ torch.backends.cudnn.benchmark=True
 torch.backends.cudnn.deterministic = True
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
 
-loader = dataset.loader
+#loader = dataset.loader
 seed = args.seed
 m = args.memory_budget
 
@@ -43,14 +43,14 @@ test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
                                                      args.memory_budget,
                                                      'test',
                                                      transform=dataset.test_transform,
-                                                     loader=loader,
+                                                     #loader=loader,
                                                      shuffle_idx = shuffle_idx,
                                                      base_classes = args.base_classes,
                                                      approach = args.trainer
                                                      )
 
 kwargs = {'num_workers': args.workers, 'pin_memory': True}
-test_iterator = torch.utils.data.DataLoader(test_dataset_loader, batch_size=50, shuffle=False, **kwargs)
+test_iterator = torch.utils.data.DataLoader(test_dataset_loader, batch_size=1000, shuffle=False, **kwargs)
 myModel = networks.ModelFactory.get_model(args.dataset)
 myModel = torch.nn.DataParallel(myModel).cuda()
 
@@ -58,12 +58,14 @@ myModel = torch.nn.DataParallel(myModel).cuda()
 start = 0
 end = args.step_size
 
-target_num = 3
-feature_result = torch.zeros((9, target_num*2, 50, 512))
+target_num = 5
+feature_result = torch.zeros((1, target_num*2, 1000, 64))
 
-model_name = '0810WA_Imagenet_wa_0_memsz_20000_base_100_step_100_batch_256_epoch_100_task'
+model_name = '200819_EEIL_30_CIFAR10_eeil_0_memsz_2000_base_5_step_5_batch_128_epoch_40_task'
+#model_name = '200819_BiC_CIFAR10_bic_0_memsz_2000_base_5_step_5_batch_128_epoch_250_distill_kd_task'
+#model_name = '0810WA_Imagenet_wa_0_memsz_20000_base_100_step_100_batch_256_epoch_100_task'
 
-for t in range(10):
+for t in range(2):
     
     name = 'models/trained_model/' + model_name + '_%d.pt'
     if t == 0:
