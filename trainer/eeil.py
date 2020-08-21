@@ -71,6 +71,7 @@ class Trainer(trainer.GenericTrainer):
         # balanced fine tuning - exemplar가 new old 개수 동일하게 되어있는상태
         schedule = np.array(self.args.schedule)
         #bftepoch = self.args.bftepoch
+#         bftepoch = int(self.args.nepochs*1)
         bftepoch = int(self.args.nepochs*0.75)
         for epoch in range(bftepoch):
             self.update_bft_lr(epoch, schedule)
@@ -112,7 +113,7 @@ class Trainer(trainer.GenericTrainer):
                         loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                     loss_KD = loss_KD.sum()
                 else:
-                    score = self.model(data).data
+#                     score = self.model(data).data # 제발 대단하길
                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
                     loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)

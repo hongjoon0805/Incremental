@@ -34,6 +34,8 @@ class TrainerFactory():
             import trainer.eeil as trainer
         elif args.trainer == 'ft_bic_focal':
             import trainer.ft_bic_focal as trainer
+        elif args.trainer == 'FCft':
+            import trainer.FCft as trainer
         return trainer.Trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
     
 

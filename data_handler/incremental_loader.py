@@ -92,7 +92,7 @@ class IncrementalLoader(td.Dataset):
         self.len = len(self.tr_idx)
         self.current_len = self.len
         
-        if self.approach == 'ft' or self.approach == 'icarl' or 'bic' in self.approach  or self.approach =='il2m':
+        if self.approach != 'ssil' and self.approach != 'lwf':
             self.len += len(self.exemplar)
             
     def update_bft_buffer(self):
@@ -107,8 +107,9 @@ class IncrementalLoader(td.Dataset):
         for i in range(self.start, self.end):
             start_idx = self.start_point[i]
             end_idx = self.end_point[i]
-            idx = shuffle(np.arange(end_idx - start_idx), random_state = self.t)
-            self.bft_buffer[i] += range(start_idx, start_idx+buffer_per_class)
+            idx = shuffle(np.arange(end_idx - start_idx), random_state = self.t)[:buffer_per_class]
+#             self.bft_buffer[i] += range(start_idx, start_idx+buffer_per_class)
+            self.bft_buffer[i] += list(idx)
         for arr in self.bft_buffer:
             if len(arr) > buffer_per_class:
                 arr.pop()
@@ -124,27 +125,6 @@ class IncrementalLoader(td.Dataset):
 
         for i in range(self.start,self.end):
             start_idx = self.start_point[i]
-            # herding selection ,  distance order    insert
-            """img_list = []
-            end_idx = self.end_point[i]
-            for idx in range(start_idx, end_idx):
-                img = self.data[idx]
-                try:
-                    img = Image.fromarray(img)
-                except:
-                    img = self.loader(img)
-
-                if self.transform is not None:
-                    img = self.transform(img)
-               img_list.append(img)
-            img_list = np.array(img_list)
-            _, feature = self.mode(img_list, feature_return=True)
-            # distance measure
-            # sort    0~end_idx - start_idx
-            # make list,   start_idx + sorted index
-            # self.memory_buffer[i] += list
-            """
-            # ------------------------
             self.memory_buffer[i] += range(start_idx, start_idx+buffer_per_class)
         # second, throw away the previous samples
         if buffer_per_class > 0:
@@ -195,7 +175,7 @@ class IncrementalLoader(td.Dataset):
         elif self.mode == 'bias':
             return len(self.validation_buffer)
         elif self.mode == 'b-ft':
-            return len(self.exemplar)
+            return len(self.bft_exemplar)
         else:
             return self.end_idx
     

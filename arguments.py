@@ -56,7 +56,8 @@ def get_args():
                                  'wa',
                                  'ft_wa',
                                  'ft_bic_focal',
-                                 'eeil'], 
+                                 'eeil',
+                                 'FCft'], 
                         help='(default=%(default)s)')
     parser.add_argument('--distill', default='None', type=str, required=False,
                         choices=['kd', 

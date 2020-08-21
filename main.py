@@ -291,6 +291,7 @@ for t in range(tasknum):
         myTrainer.weight_align()   
     
     if t > 0 and args.trainer == 'eeil':
+        myTrainer.update_frozen_model()
         myTrainer.balance_fine_tune()
     
     ############################################
@@ -402,10 +403,9 @@ for t in range(tasknum):
     
     if args.trainer == 'ssil':
         train_start = train_end - args.step_size
-    if args.trainer == 'ssil' or 'ft' in args.trainer or args.trainer == 'icarl' or args.trainer == 'wa':
-        torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
+    
+    torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
     if 'bic' in args.trainer:
-        torch.save(myModel.state_dict(), './models/trained_model/' + log_name + '_task_{}.pt'.format(t))
         torch.save(myTrainer.bias_correction_layer.state_dict(), 
                    './models/trained_model/' + log_name + '_bias' + '_task_{}.pt'.format(t))
     
