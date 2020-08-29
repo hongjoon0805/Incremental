@@ -1,9 +1,3 @@
-''' Incremental-Classifier Learning 
- Authors : Khurram Javed, Muhammad Talha Paracha
- Maintainer : Khurram Javed
- Lab : TUKL-SEECS R&D Lab
- Email : 14besekjaved@seecs.edu.pk '''
-
 from __future__ import print_function
 
 import copy
@@ -21,8 +15,8 @@ import networks
 import trainer
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
-        super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
+    def __init__(self, trainDataIterator, model, args, optimizer):
+        super().__init__(trainDataIterator, model, args, optimizer)
         
         self.loss = torch.nn.CrossEntropyLoss(reduction='sum')
         

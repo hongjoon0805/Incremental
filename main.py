@@ -13,7 +13,7 @@ import arguments
 from sklearn.utils import shuffle
 from sklearn.metrics import roc_auc_score
 
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 args = arguments.get_args()
 
@@ -40,8 +40,6 @@ if args.trainer == 'ssil' or 'ft' in  args.trainer or args.trainer == 'il2m':
 if args.prev_new:
     log_name += '_prev_new'
 
-torch.backends.cudnn.benchmark=True
-torch.backends.cudnn.deterministic = True
 dataset = data_handler.DatasetFactory.get_dataset(args.dataset)
 
 if args.dataset == 'CIFAR100' or args.dataset == 'CIFAR10':
@@ -59,90 +57,37 @@ torch.cuda.manual_seed(seed)
 
 # Loader used for training data
 shuffle_idx = shuffle(np.arange(dataset.classes), random_state=args.seed)
+print("Label shuffled")
 print(shuffle_idx)
+
+dataset.train_labels = shuffle_idx[dataset.train_labels]
+dataset.test_labels = shuffle_idx[dataset.test_labels]
+train_sort_index = np.argsort(dataset.train_labels)
+test_sort_index = np.argsort(dataset.test_labels)
+
+dataset.train_labels = dataset.train_labels[train_sort_index]
+dataset.test_labels = dataset.test_labels[test_sort_index]
+dataset.train_data = dataset.train_data[train_sort_index]
+dataset.test_data = dataset.test_data[test_sort_index]
+
 
 myModel = networks.ModelFactory.get_model(args.dataset)
 myModel = torch.nn.DataParallel(myModel).cuda()
 
-train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
-                                                      dataset.train_labels,
-                                                      dataset.classes,
-                                                      args.step_size,
-                                                      args.memory_budget,
-                                                      'train',
-                                                      transform=dataset.train_transform,
-                                                      loader=loader,
-                                                      shuffle_idx = shuffle_idx,
-                                                      base_classes = args.base_classes,
-                                                      approach = args.trainer,
-                                                      model = myModel
-                                                      )
-# Loader for evaluation
-evaluate_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
-                                                         dataset.train_labels,
-                                                         dataset.classes,
-                                                         args.step_size,
-                                                         args.memory_budget,
-                                                         'train',
-                                                         transform=dataset.train_transform,
-                                                         loader=loader,
-                                                         shuffle_idx = shuffle_idx,
-                                                         base_classes = args.base_classes,
-                                                         approach = 'ft',
-                                                         model = myModel
-                                                        )
-
-# Loader for test data.
-test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
-                                                     dataset.test_labels,
-                                                     dataset.classes,
-                                                     args.step_size,
-                                                     args.memory_budget,
-                                                     'test',
-                                                     transform=dataset.test_transform,
-                                                     loader=loader,
-                                                     shuffle_idx = shuffle_idx,
-                                                     base_classes = args.base_classes,
-                                                     approach = args.trainer,
-                                                     model = myModel
-                                                     )
-
-# Loader for training bias correction layer in Large-scale Incremental Learning
-bias_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
-                                                     dataset.train_labels,
-                                                     dataset.classes,
-                                                     args.step_size,
-                                                     args.memory_budget,
-                                                     'bias',
-                                                     transform=dataset.train_transform,
-                                                     loader=loader,
-                                                     shuffle_idx = shuffle_idx,
-                                                     base_classes = args.base_classes,
-                                                     approach = args.trainer,
-                                                     model = myModel
-                                                     )
-
-
-result_dataset_loaders = data_handler.make_ResultLoaders(dataset.test_data,
-                                                         dataset.test_labels,
-                                                         dataset.classes,
-                                                         args.step_size,
-                                                         transform=dataset.test_transform,
-                                                         loader=loader,
-                                                         shuffle_idx = shuffle_idx,
-                                                         base_classes = args.base_classes
-                                                        )
+incremental_loader = data_handler.IncrementalLoader(dataset, args)
+result_loader = data_handler.ResultLoader(dataset, args)
+result_loader.reset()
 
 # Iterator to iterate over training data.
 kwargs = {'num_workers': args.workers, 'pin_memory': True}
-train_iterator = torch.utils.data.DataLoader(train_dataset_loader,
-                                             batch_size=args.batch_size, shuffle=True, drop_last=True, **kwargs)
 
-evaluator_iterator = torch.utils.data.DataLoader(evaluate_dataset_loader,
+incremental_loader.mode = 'train'
+train_iterator = torch.utils.data.DataLoader(incremental_loader,
                                              batch_size=args.batch_size, shuffle=True, **kwargs)
 
 # Iterator to iterate over test data
-test_iterator = torch.utils.data.DataLoader(test_dataset_loader, batch_size=100, shuffle=False, **kwargs)
+incremental_loader.mode = 'test'
+test_iterator = torch.utils.data.DataLoader(incremental_loader, batch_size=100, shuffle=False, **kwargs)
 
 # Get the required model
 print(torch.cuda.device_count())
@@ -155,7 +100,7 @@ optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentu
                             weight_decay=args.decay, nesterov=True)
 
 # Trainer object used for training
-myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
+myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, myModel, args, optimizer)
 
 
 # Initilize the evaluators used to measure the performance of the system.
@@ -198,10 +143,6 @@ print(tasknum)
 
 for t in range(tasknum):
     
-    if args.trainer == 'il2m' :
-        model_name = 'models/trained_model/ECCV_final_{}_ft_{}_memsz_{}_base_{}_step_{}_batch_128_epoch_100_factor_4_task_{}.pt'.format(args.dataset, args.seed, args.memory_budget, args.base_classes, args.step_size, t)
-        myTrainer.model.load_state_dict(torch.load(model_name))
-    
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
     # Add new classes to the train, and test iterator
     lr = args.lr
@@ -213,48 +154,31 @@ for t in range(tasknum):
     
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
-    flag = 0
-    mem_base = {}
-    mem_base['Imagenet'] = 5000
-    mem_base['Google_Landmark_v2_1K'] = 5000
-    mem_base['Google_Landmark_v2_10K'] = 10000
-    if args.trainer == 'ft' and t==0:
-        try:
-            model_name = 'models/trained_model/ECCV_final_{}_ft_{}_memsz_{}_base_{}_step_{}_batch_128_epoch_100_factor_4_task_{}.pt'.format(args.dataset, args.seed, mem_base[args.dataset], args.base_classes, args.step_size, t)
-            myTrainer.model.load_state_dict(torch.load(model_name))
-            flag=1
-        except:
-            pass
-    if args.trainer == 'ssil' and t==0:
-        try:
-            model_name = 'models/trained_model/ECCV_final_{}_ssil_{}_memsz_{}_base_{}_step_{}_batch_128_epoch_100_replay_32_factor_5_task_{}.pt'.format(args.dataset, args.seed, mem_base[args.dataset], args.base_classes, args.step_size, t)
-            myTrainer.model.load_state_dict(torch.load(model_name))
-            flag=1
-        except:
-            pass
     
     # Running nepochs epochs
-    print('Flag: %d'%flag)
     for epoch in range(0, total_epochs):
-        if flag:
-            break
+        
         myTrainer.update_lr(epoch, schedule)
         if args.trainer == 'il2m':
             break
         else:
+            incremental_loader.mode = 'train'
             myTrainer.train(epoch)
             
         if epoch % 10 == (10 - 1) and args.debug:
             if args.trainer == 'icarl':
-                t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
+                incremental_loader.mode = 'evaluate'
+                t_classifier.update_moment(myTrainer.model, train_iterator, args.step_size, t)
             
             if t>0:
                 ###################### 폐기처분 대상 ######################
-                train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
+                incremental_loader.mode = 'evaluate'
+                train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, 0, train_end)
                 print("*********CURRENT EPOCH********** : %d"%epoch)
                 print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
                 print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
 
+                incremental_loader.mode = 'test'
                 correct, correct_5, stat = t_classifier.evaluate(myTrainer.model, test_iterator,
                                                                  test_start, test_end, 
                                                                  mode='test', step_size=args.step_size)
@@ -267,10 +191,13 @@ for t in range(tasknum):
                 
             else:
                 ###################### 폐기처분 대상 ######################
-                train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
+                incremental_loader.mode = 'evaluate'
+                train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, 0, train_end)
                 print("*********CURRENT EPOCH********** : %d"%epoch)
                 print("Train Classifier top-1 (Softmax): %0.2f"%train_1)
                 print("Train Classifier top-5 (Softmax): %0.2f"%train_5)
+                
+                incremental_loader.mode = 'test'
                 test_1, test_5 = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end, 
                                                           mode='test', step_size=args.step_size)
                 print("Test Classifier top-1 (Softmax): %0.2f"%test_1)
@@ -279,11 +206,13 @@ for t in range(tasknum):
     
     # Evaluate the learned classifier
     if args.trainer == 'icarl':
-        t_classifier.update_moment(myTrainer.model, evaluator_iterator, args.step_size, t)
+        incremental_loader.mode = 'evaluate'
+        t_classifier.update_moment(myTrainer.model, train_iterator, args.step_size, t)
         print('Moment update finished')
     
     if args.trainer == 'il2m':
-        t_classifier.update_mean(myTrainer.model, evaluator_iterator, train_end, args.step_size)
+        incremental_loader.mode = 'evaluate'
+        t_classifier.update_mean(myTrainer.model, train_iterator, train_end, args.step_size)
         print('Mean update finished')
     
     
@@ -298,8 +227,8 @@ for t in range(tasknum):
     #        BIC bias correction train         #
     ############################################
     
-    if 'bic' in args.trainer and t>0 and flag != 1:
-        
+    if 'bic' in args.trainer and t>0:
+        incremental_loader.mode = 'bias'
         bias_iterator = torch.utils.data.DataLoader(bias_dataset_loader, 
                                                     batch_size=args.batch_size, shuffle=True, **kwargs)
         print(myTrainer.bias_correction_layer.alpha)
@@ -314,25 +243,28 @@ for t in range(tasknum):
             
     if t>0:
         ###################### 폐기처분 대상 ######################
-        if flag:
-            print('Evaluation!')
+        
         if 'bic' in args.trainer:
-            train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 
+            incremental_loader.mode = 'evaluate'
+            train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, 
                                                      0, train_end, myTrainer.bias_correction_layer)
             print("*********CURRENT EPOCH********** : %d"%epoch)
             print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
             print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
             
+            incremental_loader.mode = 'test'
             correct, correct_5, stat = t_classifier.evaluate(myTrainer.model, test_iterator,
                                                          test_start, test_end, myTrainer.bias_correction_layer,
                                                          mode='test', step_size=args.step_size)
             
         else :
-            train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 0, train_end)
+            incremental_loader.mode = 'evaluate'
+            train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, 0, train_end)
             print("*********CURRENT EPOCH********** : %d"%epoch)
             print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
             print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
             
+            incremental_loader.mode = 'test'
             correct, correct_5, stat = t_classifier.evaluate(myTrainer.model, test_iterator,
                                                              test_start, test_end, 
                                                              mode='test', step_size=args.step_size)
@@ -354,25 +286,28 @@ for t in range(tasknum):
         
     else:
         ###################### 폐기처분 대상 ######################
-        if flag:
-            print('Evaluation!')
         
         if  'bic' in args.trainer:
-            train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, 
+            
+            incremental_loader.mode = 'evaluate'
+            train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, 
                                                      train_start, train_end, myTrainer.bias_correction_layer)
             print("*********CURRENT EPOCH********** : %d"%epoch)
             print("Train Classifier Final top-1 (Softmax): %0.2f"%train_1)
             print("Train Classifier Final top-5 (Softmax): %0.2f"%train_5)
             
+            incremental_loader.mode = 'test'
             test_1, test_5 = t_classifier.evaluate(myTrainer.model, test_iterator,
                                                          test_start, test_end, myTrainer.bias_correction_layer,
                                                          mode='test', step_size=args.step_size)
         
         else :
-            train_1, train_5 = t_classifier.evaluate(myTrainer.model, evaluator_iterator, train_start, train_end)
+            incremental_loader.mode = 'evaluate'
+            train_1, train_5 = t_classifier.evaluate(myTrainer.model, train_iterator, train_start, train_end)
             print("Train Classifier top-1 Final(Softmax): %0.2f"%train_1)
             print("Train Classifier top-5 Final(Softmax): %0.2f"%train_5)
             
+            incremental_loader.mode = 'test'
             test_1, test_5 = t_classifier.evaluate(myTrainer.model, test_iterator, test_start, test_end, 
                                               mode='test', step_size=args.step_size)
             
@@ -384,10 +319,9 @@ for t in range(tasknum):
     
     start = 0
     end = args.base_classes
+    result_loader.reset()
+    iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
     for i in range(t+1):
-        dataset_loader = result_dataset_loaders[i]
-        iterator = torch.utils.data.DataLoader(dataset_loader,
-                                               batch_size=args.batch_size, **kwargs)
         
         if 'bic' in args.trainer:
             results['task_soft_1'][t][i], results['task_soft_5'][t][i] = t_classifier.evaluate(myTrainer.model, 
@@ -398,6 +332,8 @@ for t in range(tasknum):
                                                                                                iterator, start, end)
         start = end
         end += args.step_size
+        
+        result_loader.task_change()
     
     sio.savemat('./result_data/'+log_name+'.mat',results)
     
@@ -410,10 +346,70 @@ for t in range(tasknum):
                    './models/trained_model/' + log_name + '_bias' + '_task_{}.pt'.format(t))
     
     myTrainer.increment_classes()
-    evaluate_dataset_loader.update_exemplar()
-    evaluate_dataset_loader.task_change()
-    bias_dataset_loader.update_exemplar()
-    bias_dataset_loader.task_change()
+#     evaluate_dataset_loader.update_exemplar()
+#     evaluate_dataset_loader.task_change()
+#     bias_dataset_loader.update_exemplar()
+#     bias_dataset_loader.task_change()
     
     train_end = train_end + args.step_size
     test_end = test_end + args.step_size
+
+    
+    
+# train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
+#                                                       dataset.train_labels,
+#                                                       dataset.classes,
+#                                                       args.step_size,
+#                                                       args.memory_budget,
+#                                                       'train',
+#                                                       transform=dataset.train_transform,
+#                                                       loader=loader,
+#                                                       shuffle_idx = shuffle_idx,
+#                                                       base_classes = args.base_classes,
+#                                                       approach = args.trainer,
+#                                                       model = myModel
+#                                                       )
+# # Loader for evaluation
+# evaluate_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
+#                                                          dataset.train_labels,
+#                                                          dataset.classes,
+#                                                          args.step_size,
+#                                                          args.memory_budget,
+#                                                          'train',
+#                                                          transform=dataset.train_transform,
+#                                                          loader=loader,
+#                                                          shuffle_idx = shuffle_idx,
+#                                                          base_classes = args.base_classes,
+#                                                          approach = 'ft',
+#                                                          model = myModel
+#                                                         )
+
+# # Loader for test data.
+# test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
+#                                                      dataset.test_labels,
+#                                                      dataset.classes,
+#                                                      args.step_size,
+#                                                      args.memory_budget,
+#                                                      'test',
+#                                                      transform=dataset.test_transform,
+#                                                      loader=loader,
+#                                                      shuffle_idx = shuffle_idx,
+#                                                      base_classes = args.base_classes,
+#                                                      approach = args.trainer,
+#                                                      model = myModel
+#                                                      )
+
+# # Loader for training bias correction layer in Large-scale Incremental Learning
+# bias_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
+#                                                      dataset.train_labels,
+#                                                      dataset.classes,
+#                                                      args.step_size,
+#                                                      args.memory_budget,
+#                                                      'bias',
+#                                                      transform=dataset.train_transform,
+#                                                      loader=loader,
+#                                                      shuffle_idx = shuffle_idx,
+#                                                      base_classes = args.base_classes,
+#                                                      approach = args.trainer,
+#                                                      model = myModel
+#                                                      )

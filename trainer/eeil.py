@@ -12,8 +12,8 @@ import networks
 import trainer
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
-        super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
+    def __init__(self, trainDataIterator, model, args, optimizer):
+        super().__init__(trainDataIterator, model, args, optimizer)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         self.bft_optimizer = torch.optim.SGD(self.model.parameters(), self.args.lr, momentum=self.args.momentum)
         
@@ -41,7 +41,6 @@ class Trainer(trainer.GenericTrainer):
     def increment_classes(self):
         self.train_data_iterator.dataset.update_exemplar()
         self.train_data_iterator.dataset.task_change()
-        self.test_data_iterator.dataset.task_change()
 
     def setup_training(self, lr):
         # ?
@@ -69,10 +68,10 @@ class Trainer(trainer.GenericTrainer):
         self.train_data_iterator.dataset.update_bft_buffer()
         self.train_data_iterator.dataset.mode = 'b-ft'
         # balanced fine tuning - exemplar가 new old 개수 동일하게 되어있는상태
-        schedule = np.array(self.args.schedule)
+        schedule = np.array(self.args.schedule)*2/5
         #bftepoch = self.args.bftepoch
 #         bftepoch = int(self.args.nepochs*1)
-        bftepoch = int(self.args.nepochs*0.75)
+        bftepoch = int(self.args.nepochs*2/5)
         for epoch in range(bftepoch):
             self.update_bft_lr(epoch, schedule)
             self.train(epoch, bft=True)

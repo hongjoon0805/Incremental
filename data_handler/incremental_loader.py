@@ -8,92 +8,73 @@ import torch
 import torch.utils.data as td
 from sklearn.utils import shuffle
 from PIL import Image
-from torch.autograd import Variable
-import torchvision.transforms.functional as trnF
 
 class IncrementalLoader(td.Dataset):
-    def __init__(self, data, labels, classes, step_size, mem_sz, mode, transform=None, loader = None, shuffle_idx=None, base_classes=50, approach = 'bic', model=None):
-        if shuffle_idx is not None:
-            # label shuffle
-            print("Label shuffled")
-            labels = shuffle_idx[labels]
+    def __init__(self, dataset, args):
+        self.dataset = dataset
+        self.args = args
         
-        sort_index = np.argsort(labels)
-        self.data = data[sort_index]
-        
-        self.model = model
-        
-        labels = np.array(labels)
-        self.labels = labels[sort_index]
-        self.labelsNormal = np.copy(self.labels)
-        self.transform = transform
-        self.loader = loader
-        self.total_classes = classes
-        
-        # Imagenet에서는 class shuffle 후 label < current_class 에서 argmin을 찾으면 length 출력 가능하다.
-        
-        self.step_size = step_size
-        self.base_classes = base_classes
         self.t=0
         
-        self.mem_sz = mem_sz
-        self.validation_buffer_size = int(mem_sz/10) * 2
-        self.mode=mode
+        self.validation_buffer_size = int(self.args.memory_budget/10) * 2
+        self.mode = None
         
         self.start = 0
-        self.end = base_classes
+        self.end = args.base_classes
         
-        self.start_idx = 0
-        self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index
+        self.train_start_idx = 0
+        self.train_end_idx = np.argmax(self.dataset.train_labels>(self.end-1)) # end data index in training datset
+        self.test_start_idx = 0
+        self.test_end_idx = np.argmax(self.dataset.test_labels>(self.end-1)) # end data index in test dataset
         
-        if self.end == classes:
-            self.end_idx = len(labels)-1
+        if self.end == self.dataset.classes:
+            self.train_end_idx = len(self.dataset.train_labels)-1
+            self.test_end_idx = len(self.dataset.test_labels)-1
         
-        self.tr_idx = range(self.end_idx)
-        self.len = len(self.tr_idx)
-        self.current_len = self.len
+        self.tr_idx = range(self.train_end_idx)
+        self.eval_idx = range(self.train_end_idx)
         
-        self.approach = approach
         self.memory_buffer = []
-        self.exemplar = []
-        self.validation_buffer = []
-        self.bft_buffer = []
         self.start_point = []
         self.end_point = []
-        for i in range(classes):
-            self.start_point.append(np.argmin(self.labelsNormal<i))
-            self.end_point.append(np.argmax(self.labelsNormal>(i)))
+        for i in range(self.dataset.classes):
+            self.start_point.append(np.argmin(self.dataset.train_labels<i))
+            self.end_point.append(np.argmax(self.dataset.train_labels>(i)))
             self.memory_buffer.append([])
-        self.end_point[-1] = len(labels)
+        self.end_point[-1] = len(self.dataset.train_labels)
         
     def task_change(self):
         self.t += 1
         
         self.start = self.end
-        self.end += self.step_size
+        self.end += self.args.step_size
         
-        self.start_idx = np.argmin(self.labelsNormal<self.start) # start data index
-        self.end_idx = np.argmax(self.labelsNormal>(self.end-1)) # end data index
-        if self.end_idx == 0:
-            self.end_idx = self.labels.shape[0]
+        self.train_start_idx = np.argmin(self.dataset.train_labels<self.start) # start data index
+        self.train_end_idx = np.argmax(self.dataset.train_labels>(self.end-1)) # end data index
+        self.test_start_idx = np.argmin(self.dataset.train_labels<self.start) # start data index
+        self.test_end_idx = np.argmax(self.dataset.test_labels>(self.end-1)) # end data index
         
-        self.tr_idx = range(self.start_idx, self.end_idx)
+        print(self.start, self.end, self.train_start_idx, self.train_end_idx)
+        
+        if self.train_end_idx == 0:
+            self.train_end_idx = self.dataset.train_labels.shape[0]
+            self.test_end_idx = self.dataset.test_labels.shape[0]
+        
+        self.tr_idx = range(self.train_start_idx, self.train_end_idx)
         
         # validation set for bic
-        if 'bic' in self.approach and self.start < self.total_classes and self.mode != 'test':
-            val_per_class = (self.validation_buffer_size//2) // self.step_size
+        if 'bic' in self.args.trainer and self.start < self.args.classes:
+            val_per_class = (self.validation_buffer_size//2) // self.args.step_size
             self.tr_idx = []
-            for i in range(self.step_size):
+            for i in range(self.args.step_size):
                 end = self.end_point[self.start + i]
                 start = self.start_point[self.start + i]
                 self.validation_buffer += range(end-val_per_class, end)
                 self.tr_idx += range(start, end-val_per_class)
         
-        self.len = len(self.tr_idx)
-        self.current_len = self.len
-        
-        if self.approach != 'ssil' and self.approach != 'lwf':
-            self.len += len(self.exemplar)
+        self.eval_idx = list(self.tr_idx) + self.exemplar
+        if self.args.trainer != 'ssil' and self.args.trainer != 'lwf':
+            self.tr_idx = list(self.tr_idx) + self.exemplar
             
     def update_bft_buffer(self):
         self.bft_buffer = copy.deepcopy(self.memory_buffer)
@@ -101,14 +82,12 @@ class IncrementalLoader(td.Dataset):
         for arr in self.bft_buffer:
             min_len = min(min_len, len(arr))
 
-        #buffer_per_class = math.ceil(self.mem_sz / (self.end-self.step_size))
         buffer_per_class = min_len
         
         for i in range(self.start, self.end):
             start_idx = self.start_point[i]
             end_idx = self.end_point[i]
             idx = shuffle(np.arange(end_idx - start_idx), random_state = self.t)[:buffer_per_class]
-#             self.bft_buffer[i] += range(start_idx, start_idx+buffer_per_class)
             self.bft_buffer[i] += list(idx)
         for arr in self.bft_buffer:
             if len(arr) > buffer_per_class:
@@ -120,7 +99,7 @@ class IncrementalLoader(td.Dataset):
             
     def update_exemplar(self):
         
-        buffer_per_class = math.ceil(self.mem_sz / self.end)
+        buffer_per_class = math.ceil(self.args.memory_budget / self.end)
         # first, add new exemples
 
         for i in range(self.start,self.end):
@@ -136,7 +115,7 @@ class IncrementalLoader(td.Dataset):
         # randomly select classes. **random seed = self.t or start** <-- IMPORTANT!
 
         length =sum([len(i) for i in self.memory_buffer])
-        remain = length - self.mem_sz
+        remain = length - self.args.memory_budget
         if remain > 0:
             imgs_per_class = [len(i) for i in self.memory_buffer]
             selected_classes = np.argsort(imgs_per_class)[-remain:]
@@ -149,7 +128,7 @@ class IncrementalLoader(td.Dataset):
         
         
         # validation set for bic
-        if 'bic' in self.approach:
+        if 'bic' in self.args.trainer:
             self.bic_memory_buffer = copy.deepcopy(self.memory_buffer)
             self.validation_buffer = []
             validation_per_class = (self.validation_buffer_size//2) // self.end
@@ -171,94 +150,93 @@ class IncrementalLoader(td.Dataset):
                 
     def __len__(self):
         if self.mode == 'train':
-            return self.len
+            return len(self.tr_idx)
+        elif self.mode == 'evaluate':
+            return len(self.eval_idx)
         elif self.mode == 'bias':
             return len(self.validation_buffer)
         elif self.mode == 'b-ft':
             return len(self.bft_exemplar)
         else:
-            return self.end_idx
+            return self.test_end_idx
     
     def __getitem__(self, index):
-#         time.sleep(0.1)
+        data = self.dataset.train_data
+        labels = self.dataset.train_labels
+        transform = self.dataset.train_transform
         if self.mode == 'train':
-            if index >= self.current_len: # for bic, ft, icarl, il2m
-                index = self.exemplar[index - self.current_len]
-            else:
-                index = self.tr_idx[index]
-            
+            index = self.tr_idx[index]
+        if self.mode == 'evaluate':
+            index = self.eval_idx[index]
         elif self.mode == 'bias': # for bic bias correction
             index = self.validation_buffer[index]
         elif self.mode == 'b-ft':
             index = self.bft_exemplar[index]
-            
-        img = self.data[index]
+        elif self.mode == 'test':
+            data = self.dataset.test_data
+            labels = self.dataset.test_labels
+            transform = self.dataset.test_transform
+        
+        img = data[index]
         
         try:
             img = Image.fromarray(img)
         except:
-            img = self.loader(img)
+            img = Image.open(img, mode='r').convert('RGB')
         
-        if self.transform is not None:
-            img = self.transform(img)
+        img = transform(img)
 
-        return img, self.labelsNormal[index]
+        return img, labels[index]
 
 class ResultLoader(td.Dataset):
-    def __init__(self, data, labels, transform=None, loader = None):
+    def __init__(self, dataset, args):
         
-        self.data = data
-        self.labels = labels
-        self.labelsNormal = np.copy(self.labels)
-        self.transform=transform
-        self.loader = loader
-        self.transformLabels()
-
-    def transformLabels(self):
-        '''Change labels to one hot coded vectors'''
-        b = np.zeros((self.labels.size, self.labels.max() + 1))
-        b[np.arange(self.labels.size), self.labels] = 1
-        self.labels = b
+        self.t = 0
+        
+        self.args = args
+        self.dataset = dataset
+        
+        self.data = dataset.test_data
+        self.labels = dataset.test_labels
+        self.transform=dataset.test_transform
+        self.loader = dataset.loader
+        
         
     def __len__(self):
-        return self.labels.shape[0]
+        return len(self.test_idx)
     
+    def reset(self):
+        self.start = 0
+        self.end = self.args.base_classes
+        self.start_idx = 0
+        self.end_idx = np.argmax(self.dataset.test_labels>(self.end-1)) # end data index in test dataset
+        
+        if self.end == self.dataset.classes:
+            self.end_idx = len(self.dataset.test_labels)-1
+            
+        self.test_idx = range(self.start_idx, self.end_idx)
+        
+    def task_change(self):
+        self.t += 1
+        
+        self.start = self.end
+        self.end += self.args.step_size
+        
+        self.start_idx = np.argmin(self.labels<self.start) # start data index
+        self.end_idx = np.argmax(self.labels>(self.end-1)) # end data index
+        if self.end_idx == 0:
+            self.end_idx = self.labels.shape[0]
+        
+        self.test_idx = range(self.start_idx, self.end_idx)
+            
     def __getitem__(self, index):
-#         time.sleep(0.1)
         img = self.data[index]
         try:
             img = Image.fromarray(img)
         except:
-            img = self.loader(img)
+            img = Image.open(img, mode='r').convert('RGB')
             
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, self.labelsNormal[index]
-
-def make_ResultLoaders(data, labels, classes, step_size, transform = None, loader = None, shuffle_idx=None, base_classes=50):
-    if shuffle_idx is not None:
-        labels = shuffle_idx[labels]
-    sort_index = np.argsort(labels)
-    data = data[sort_index]
-    labels = np.array(labels)
-    labels = labels[sort_index]
-    
-    start = 0
-    end = base_classes
-    
-    loaders = []
-    
-    while(end <= classes):
-        
-        start_idx = np.argmin(labels<start) # start data index
-        end_idx = np.argmax(labels>(end-1)) # end data index
-        if end_idx == 0:
-            end_idx = data.shape[0]
-        
-        loaders.append(ResultLoader(data[start_idx:end_idx], labels[start_idx:end_idx], transform=transform, loader=loader))
-        
-        start = end
-        end += step_size
-    
-    return loaders
+        return img, self.labels[index]

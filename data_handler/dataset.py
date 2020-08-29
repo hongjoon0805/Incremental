@@ -88,7 +88,8 @@ class CIFAR10(Dataset):
         self.train_labels = np.array(train_dataset.train_labels)
         test_dataset = datasets.CIFAR10("../dat", train=False, transform=self.test_transform, download=True)
         self.test_data = test_dataset.test_data
-        self.test_labels = np.array(test_dataset.test_labels)        
+        self.test_labels = np.array(test_dataset.test_labels)
+        self.loader = None
 
 class CIFAR100(Dataset):
     def __init__(self):
@@ -115,6 +116,7 @@ class CIFAR100(Dataset):
         test_dataset = datasets.CIFAR100("../dat", train=False, transform=self.test_transform, download=True)
         self.test_data = test_dataset.test_data
         self.test_labels = np.array(test_dataset.test_labels)
+        self.loader = None
 
 class Imagenet(Dataset):
     def __init__(self):

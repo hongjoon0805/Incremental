@@ -12,7 +12,7 @@ class TrainerFactory():
         pass
 
     @staticmethod
-    def get_trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer):
+    def get_trainer(train_iterator, myModel, args, optimizer):
         
         if args.trainer == 'lwf':
             import trainer.lwf as trainer
@@ -36,7 +36,7 @@ class TrainerFactory():
             import trainer.ft_bic_focal as trainer
         elif args.trainer == 'FCft':
             import trainer.FCft as trainer
-        return trainer.Trainer(train_iterator, test_iterator, dataset, myModel, args, optimizer)
+        return trainer.Trainer(train_iterator, myModel, args, optimizer)
     
 
 class ExemplarLoader(td.Dataset):
@@ -71,15 +71,23 @@ class GenericTrainer:
     Base class for trainer; to implement a new training routine, inherit from this. 
     '''
 
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
+    def __init__(self, trainDataIterator, model, args, optimizer):
         self.train_data_iterator = trainDataIterator
-        self.test_data_iterator = testDataIterator
         self.model = model
         self.args = args
-        self.dataset = dataset
-        self.train_loader = self.train_data_iterator.dataset
+        self.incremental_loader = self.train_data_iterator.dataset
         self.optimizer = optimizer
         self.model_fixed = copy.deepcopy(self.model)
         for param in self.model_fixed.parameters():
             param.requires_grad = False
         self.current_lr = args.lr
+        
+    def update_lr(self, epoch, schedule):
+        for temp in range(0, len(schedule)):
+            if schedule[temp] == epoch:
+                for param_group in self.optimizer.param_groups:
+                    self.current_lr = param_group['lr']
+                    param_group['lr'] = self.current_lr * self.args.gammas[temp]
+                    print("Changing learning rate from %0.4f to %0.4f"%(self.current_lr,
+                                                                        self.current_lr * self.args.gammas[temp]))
+                    self.current_lr *= self.args.gammas[temp]
