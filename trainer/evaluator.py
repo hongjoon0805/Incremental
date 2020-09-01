@@ -520,7 +520,16 @@ class softmax_evaluator():
         self.pred_5 = {}
         self.pred['all'] = out.data.max(1, keepdim=True)[1]
         self.pred_5['all'] = torch.topk(out, 5, dim=1)[1]
+        """print("top 1")
+        unique, counts = torch.unique(self.pred['all'], return_counts=True)
+        print(unique)
+        print(counts)
         
+        print("top 5")
+        unique, counts = torch.unique(self.pred_5['all'], return_counts=True)
+        print(unique)
+        print(counts)"""
+        #print(self.pred_5['all'])
         prev_out = out[:,start:end-step_size]
         curr_out = out[:,end-step_size:end]
 

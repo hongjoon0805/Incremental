@@ -54,12 +54,11 @@ class IncrementalLoader(td.Dataset):
         self.test_start_idx = np.argmin(self.dataset.train_labels<self.start) # start data index
         self.test_end_idx = np.argmax(self.dataset.test_labels>(self.end-1)) # end data index
         
-        print(self.start, self.end, self.train_start_idx, self.train_end_idx)
-        
         if self.train_end_idx == 0:
             self.train_end_idx = self.dataset.train_labels.shape[0]
             self.test_end_idx = self.dataset.test_labels.shape[0]
         
+        print(self.start, self.end, self.train_start_idx, self.train_end_idx)
         self.tr_idx = range(self.train_start_idx, self.train_end_idx)
         
         # validation set for bic
@@ -157,7 +156,9 @@ class IncrementalLoader(td.Dataset):
             return len(self.validation_buffer)
         elif self.mode == 'b-ft':
             return len(self.bft_exemplar)
-        else:
+        elif self.mode == 'full':
+            return self.train_end_idx
+        elif self.mode == 'test':
             return self.test_end_idx
     
     def __getitem__(self, index):
@@ -172,6 +173,8 @@ class IncrementalLoader(td.Dataset):
             index = self.validation_buffer[index]
         elif self.mode == 'b-ft':
             index = self.bft_exemplar[index]
+        elif self.mode == 'full':
+            pass
         elif self.mode == 'test':
             data = self.dataset.test_data
             labels = self.dataset.test_labels

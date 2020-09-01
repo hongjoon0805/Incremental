@@ -95,9 +95,10 @@ class Trainer(trainer.GenericTrainer):
         
         tasknum = self.train_data_iterator.dataset.t
         end = self.train_data_iterator.dataset.end
-        start = end-self.args.step_size
+        mid = end-self.args.step_size
+        start = 0
         
-        lamb = start / end
+        lamb = mid / end
         for data, target in tqdm(self.train_data_iterator):
             data, target = data.cuda(), target.cuda()
 
@@ -113,7 +114,7 @@ class Trainer(trainer.GenericTrainer):
             loss_KD = 0
                 # distillation 할 때 bias를 correction 한 상태에서 distillation 해야한다.
             if tasknum > 0:
-                end_KD = start
+                end_KD = mid
                 start_KD = end_KD - self.args.step_size
 
                 if self.distill == 'kd':

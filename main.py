@@ -346,70 +346,7 @@ for t in range(tasknum):
                    './models/trained_model/' + log_name + '_bias' + '_task_{}.pt'.format(t))
     
     myTrainer.increment_classes()
-#     evaluate_dataset_loader.update_exemplar()
-#     evaluate_dataset_loader.task_change()
-#     bias_dataset_loader.update_exemplar()
-#     bias_dataset_loader.task_change()
-    
     train_end = train_end + args.step_size
     test_end = test_end + args.step_size
 
     
-    
-# train_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
-#                                                       dataset.train_labels,
-#                                                       dataset.classes,
-#                                                       args.step_size,
-#                                                       args.memory_budget,
-#                                                       'train',
-#                                                       transform=dataset.train_transform,
-#                                                       loader=loader,
-#                                                       shuffle_idx = shuffle_idx,
-#                                                       base_classes = args.base_classes,
-#                                                       approach = args.trainer,
-#                                                       model = myModel
-#                                                       )
-# # Loader for evaluation
-# evaluate_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
-#                                                          dataset.train_labels,
-#                                                          dataset.classes,
-#                                                          args.step_size,
-#                                                          args.memory_budget,
-#                                                          'train',
-#                                                          transform=dataset.train_transform,
-#                                                          loader=loader,
-#                                                          shuffle_idx = shuffle_idx,
-#                                                          base_classes = args.base_classes,
-#                                                          approach = 'ft',
-#                                                          model = myModel
-#                                                         )
-
-# # Loader for test data.
-# test_dataset_loader = data_handler.IncrementalLoader(dataset.test_data,
-#                                                      dataset.test_labels,
-#                                                      dataset.classes,
-#                                                      args.step_size,
-#                                                      args.memory_budget,
-#                                                      'test',
-#                                                      transform=dataset.test_transform,
-#                                                      loader=loader,
-#                                                      shuffle_idx = shuffle_idx,
-#                                                      base_classes = args.base_classes,
-#                                                      approach = args.trainer,
-#                                                      model = myModel
-#                                                      )
-
-# # Loader for training bias correction layer in Large-scale Incremental Learning
-# bias_dataset_loader = data_handler.IncrementalLoader(dataset.train_data,
-#                                                      dataset.train_labels,
-#                                                      dataset.classes,
-#                                                      args.step_size,
-#                                                      args.memory_budget,
-#                                                      'bias',
-#                                                      transform=dataset.train_transform,
-#                                                      loader=loader,
-#                                                      shuffle_idx = shuffle_idx,
-#                                                      base_classes = args.base_classes,
-#                                                      approach = args.trainer,
-#                                                      model = myModel
-#                                                      )
