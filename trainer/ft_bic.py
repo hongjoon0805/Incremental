@@ -21,24 +21,13 @@ class BiasLayer(nn.Module):
         return x*self.alpha + self.beta
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
-        super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
+    def __init__(self, trainDataIterator, model, args, optimizer):
+        super().__init__(trainDataIterator, model, args, optimizer)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         self.bias_correction_layer = BiasLayer()
-        self.bias_correction_layer_arr = []
         
         self.bias_optimizer = torch.optim.Adam(self.bias_correction_layer.parameters(), 0.001)
     
-    def update_lr(self, epoch, schedule):
-        for temp in range(0, len(schedule)):
-            if schedule[temp] == epoch:
-                for param_group in self.optimizer.param_groups:
-                    self.current_lr = param_group['lr']
-                    param_group['lr'] = self.current_lr * self.args.gammas[temp]
-                    print("Changing learning rate from %0.4f to %0.4f"%(self.current_lr,
-                                                                        self.current_lr * self.args.gammas[temp]))
-                    self.current_lr *= self.args.gammas[temp]
-
     def update_bias_lr(self, epoch, schedule):
         for temp in range(0, len(schedule)):
             if schedule[temp]*2 == epoch:
@@ -49,13 +38,6 @@ class Trainer(trainer.GenericTrainer):
                                                                         self.current_lr * self.args.gammas[temp]))
                     self.current_lr *= self.args.gammas[temp]
 
-    def increment_classes(self):
-        
-        self.train_data_iterator.dataset.update_exemplar()
-        self.train_data_iterator.dataset.task_change()
-        self.test_data_iterator.dataset.task_change()
-        self.bias_correction_layer_arr.append(self.bias_correction_layer)
-
     def setup_training(self, lr):
         
         for param_group in self.optimizer.param_groups:
@@ -65,7 +47,6 @@ class Trainer(trainer.GenericTrainer):
 
         lr = lr/100
         self.bias_correction_layer = BiasLayer()
-#       self.bias_optimizer = torch.optim.Adam(self.bias_correction_layer.parameters(), lr)
         self.bias_optimizer = torch.optim.SGD(self.bias_correction_layer.parameters(), self.args.lr, momentum=self.args.momentum)
                 
         for param_group in self.bias_optimizer.param_groups:
@@ -73,13 +54,6 @@ class Trainer(trainer.GenericTrainer):
             param_group['lr'] = lr
             self.current_lr = lr
         
-    def update_frozen_model(self):
-        self.model.eval()
-        self.model_fixed = copy.deepcopy(self.model)
-        self.model_fixed.eval()
-        for param in self.model_fixed.parameters():
-            param.requires_grad = False
-
     def train(self, epoch):
         
         self.model.train()

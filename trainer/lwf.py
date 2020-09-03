@@ -17,44 +17,8 @@ from tqdm import tqdm
 import networks
 
 class Trainer(GenericTrainer):
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
-        super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
-
-    def update_lr(self, epoch):
-        for temp in range(0, len(self.args.schedule)):
-            if self.args.schedule[temp] == epoch:
-                for param_group in self.optimizer.param_groups:
-                    self.current_lr = param_group['lr']
-                    param_group['lr'] = self.current_lr * self.args.gammas[temp]
-                    print("Changing learning rate from %0.2f to %0.2f"%(self.current_lr,
-                                                                        self.current_lr * self.args.gammas[temp]))
-                    self.current_lr *= self.args.gammas[temp]
-
-    def increment_classes(self):
-        '''
-        Add classes starting from class_group to class_group + step_size 
-        :param class_group: 
-        :return: N/A. Only has side-affects 
-        '''
-        
-
-    def setup_training(self):
-        
-        self.train_data_iterator.dataset.task_change()
-        self.test_data_iterator.dataset.task_change()
-        
-        for param_group in self.optimizer.param_groups:
-            print("Setting LR to %0.2f"%self.args.lr)
-            param_group['lr'] = self.args.lr
-            self.current_lr = self.args.lr
-
-    def update_frozen_model(self):
-        self.model.eval()
-        self.model_fixed = copy.deepcopy(self.model)
-        self.model_fixed.eval()
-        for param in self.model_fixed.parameters():
-            param.requires_grad = False
-        self.models.append(self.model_fixed)
+    def __init__(self, trainDataIterator, model, args, optimizer):
+        super().__init__(trainDataIterator, model, args, optimizer)
 
     def train(self, epoch):
         

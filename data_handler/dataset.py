@@ -1,9 +1,3 @@
-''' Incremental-Classifier Learning 
- Authors : Khurram Javed, Muhammad Talha Paracha
- Maintainer : Khurram Javed
- Lab : TUKL-SEECS R&D Lab
- Email : 14besekjaved@seecs.edu.pk '''
-
 from torchvision import datasets, transforms
 import torch
 import numpy as np
@@ -62,6 +56,21 @@ class Dataset():
         self.name = name
         self.train_data = None
         self.test_data = None
+        self.train_labels = None
+        self.test_labels = None
+        
+    def shuffle_data(self, shuffle_idx):
+        self.train_labels = shuffle_idx[self.train_labels]
+        self.test_labels = shuffle_idx[self.test_labels]
+        train_sort_index = np.argsort(self.train_labels)
+        test_sort_index = np.argsort(self.test_labels)
+
+        self.train_labels = self.train_labels[train_sort_index]
+        self.test_labels = self.test_labels[test_sort_index]
+        self.train_data = self.train_data[train_sort_index]
+        self.test_data = self.test_data[test_sort_index]
+
+        return
 
 
 class CIFAR10(Dataset):

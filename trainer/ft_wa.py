@@ -13,8 +13,8 @@ import networks
 import trainer
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, testDataIterator, dataset, model, args, optimizer):
-        super().__init__(trainDataIterator, testDataIterator, dataset, model, args, optimizer)
+    def __init__(self, trainDataIterator, model, args, optimizer):
+        super().__init__(trainDataIterator, model, args, optimizer)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         
     def update_lr(self, epoch, schedule):

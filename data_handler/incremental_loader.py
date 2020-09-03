@@ -21,13 +21,14 @@ class IncrementalLoader(td.Dataset):
         
         self.start = 0
         self.end = args.base_classes
+        self.classes = self.dataset.classes
         
         self.train_start_idx = 0
         self.train_end_idx = np.argmax(self.dataset.train_labels>(self.end-1)) # end data index in training datset
         self.test_start_idx = 0
         self.test_end_idx = np.argmax(self.dataset.test_labels>(self.end-1)) # end data index in test dataset
         
-        if self.end == self.dataset.classes:
+        if self.end == self.classes:
             self.train_end_idx = len(self.dataset.train_labels)-1
             self.test_end_idx = len(self.dataset.test_labels)-1
         
@@ -37,7 +38,7 @@ class IncrementalLoader(td.Dataset):
         self.memory_buffer = []
         self.start_point = []
         self.end_point = []
-        for i in range(self.dataset.classes):
+        for i in range(self.classes):
             self.start_point.append(np.argmin(self.dataset.train_labels<i))
             self.end_point.append(np.argmax(self.dataset.train_labels>(i)))
             self.memory_buffer.append([])
@@ -198,6 +199,7 @@ class ResultLoader(td.Dataset):
         
         self.args = args
         self.dataset = dataset
+        self.classes = dataset.classes
         
         self.data = dataset.test_data
         self.labels = dataset.test_labels
@@ -214,7 +216,7 @@ class ResultLoader(td.Dataset):
         self.start_idx = 0
         self.end_idx = np.argmax(self.dataset.test_labels>(self.end-1)) # end data index in test dataset
         
-        if self.end == self.dataset.classes:
+        if self.end == self.classes:
             self.end_idx = len(self.dataset.test_labels)-1
             
         self.test_idx = range(self.start_idx, self.end_idx)

@@ -6,13 +6,14 @@ import torch
 import torch.nn.functional as F
 from numpy.linalg import inv
 from tqdm import tqdm
-
+from sklearn.metrics import confusion_matrix
+import pickle
 
 
 class ResultLogger():
     def __init__(self, trainer, train_iterator, test_iterator, args):
         
-        tasknum = (train_iterator.dataset.classes-args.base_classes)//args.step_size+1
+        self.tasknum = (train_iterator.dataset.classes-args.base_classes)//args.step_size+1
         
         self.trainer = trainer
         self.model = trainer.model
@@ -21,11 +22,6 @@ class ResultLogger():
         self.args = args
         self.option = 'euclidean'
         self.result = {}
-        self.result['train-top-1'] = []
-        self.result['test-top-1'] = []
-        self.result['train-top-5'] = []
-        self.result['test-top-5'] = []
-        self.result['statistics'] = np.zeros((tasknum-1,6))
         
         # For IL2M
         classes = self.train_iterator.dataset.dataset.classes
@@ -33,8 +29,9 @@ class ResultLogger():
         self.current_class_means = torch.zeros(classes).cuda()
         self.model_confidence = torch.zeros(classes).cuda()
         
-    def evaluate(self, mode = 'train', print_log = False, save_results = False):
+    def evaluate(self, mode = 'train', get_results = False):
         self.model.eval()
+        t = self.train_iterator.dataset.t
         if mode == 'train':
             self.train_iterator.dataset.mode = 'evaluate'
             iterator = self.train_iterator
@@ -51,31 +48,28 @@ class ResultLogger():
                 data, target = data.cuda(), target.cuda()
                 out, features = self.make_output(data)
                 out_matrix.append(out)
-                features_matrix.append(feature)
+                features_matrix.append(features)
                 target_matrix.append(target)
                 
             out_matrix = torch.cat(out_matrix, dim=0)
             features_matrix = torch.cat(features_matrix, dim=0)
             target_matrix = torch.cat(target_matrix, dim=0)
-            self.get_accuracy(mode, out_matrix)
+            self.get_accuracy(mode, out_matrix, target_matrix)
             
-            if mode == 'test':
+            if mode == 'test' and get_results and t > 0:
                 self.get_statistics(out_matrix, target_matrix)
                 self.get_confusion_matrix(out_matrix, target_matrix)
-                self.get_cosine_similarity(features_matrix)
-                self.weight_norm()
-                self.get_feature_norm(features_matrix)
+#                 self.get_cosine_similarity(out_matrix, features_matrix, target_matrix)
+#                 self.get_weight_norm()
+#                 self.get_features_norm(features_matrix)
 
-            if print_log:
-                self.print_result()
-            if save_results:
-                self.save_results()
+            self.print_result(mode, t)
         
     def make_output(self, data):
         end = self.train_iterator.dataset.end
         step_size = self.args.step_size
         
-        if 'bic' in args.trainer:
+        if 'bic' in self.args.trainer:
             bias_correction_layer = self.trainer.bias_correction_layer
             out, features = self.model(data, feature_return = True)
             out = out[:,:end]
@@ -83,7 +77,7 @@ class ResultLogger():
                 out_new = bias_correction_layer(out[:,end-step_size:end])
                 out = torch.cat((out[:,:end-step_size], out_new), dim=1)
             
-        elif args.trainer == 'il2m':
+        elif self.args.trainer == 'il2m':
             
             out, features = self.model(data, feature_return = True)
             out = out[:,:end]
@@ -95,7 +89,7 @@ class ResultLogger():
                                  * (self.model_confidence[end-1] / self.model_confidence[:end])
                 out = (1-mask).float() * prob + mask.float() * rect_prob
             
-        elif args.trainer == 'icarl' or 'nem' in args.trainer:
+        elif self.args.trainer == 'icarl' or 'nem' in self.args.trainer:
             _, features = model.forward(data, feature_return=True)
             batch_vec = (features.data.unsqueeze(1) - self.class_means.unsqueeze(0))
             temp = torch.matmul(batch_vec, self.precision)
@@ -108,25 +102,35 @@ class ResultLogger():
         return out, features
     
     def get_accuracy(self, mode, out, target):
+        if mode+'-top-1' not in self.result:
+            self.result[mode + '-top-1'] = np.zeros(self.tasknum)
+            self.result[mode + '-top-5'] = np.zeros(self.tasknum)
+            
+        t = self.train_iterator.dataset.t
+        
         pred_1 = out.data.max(1, keepdim=True)[1]
         pred_5 = torch.topk(out, 5, dim=1)[1]
 
         correct_1 = pred_1.eq(target.data.view_as(pred_1)).sum().item()
         correct_5 = pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).sum().item()
         
-        self.result[mode+'-top-1'] = 100.*(correct_1 / target.shape[0])
-        self.result[mode+'-top-5'] = 100.*(correct_5 / target.shape[0])
+        self.result[mode+'-top-1'][t] = 100.*(correct_1 / target.shape[0])
+        self.result[mode+'-top-5'][t] = 100.*(correct_5 / target.shape[0])
         
         
     def get_statistics(self, out, target):
-        # e(p,n), e(n,p) 등등 구하기
+        if 'statistics' not in self.result:
+            self.result['statistics'] = []
+        
+        stat = np.zeros(6)
+        
         t = self.train_iterator.dataset.t
         end = self.train_iterator.dataset.end
-        samples_per_classes = 50
-        old_samples = self.args.step_size * 50 * (t)
+        samples_per_classes = target.shape[0] // end
+        old_samples = (end - self.args.step_size) * samples_per_classes 
         new_samples = out.shape[0] - old_samples
         out_old, out_new = out[:old_samples], out[old_samples:]
-        target_old, target_new = out[:old_samples], out[old_samples:]
+        target_old, target_new = target[:old_samples], target[old_samples:]
         pred_old, pred_new = out_old.data.max(1, keepdim=True)[1], out_new.data.max(1, keepdim=True)[1]
         
         # statistics
@@ -137,25 +141,88 @@ class ResultLogger():
         enp = (pred_new < end-self.args.step_size).int().sum()
         enn = (new_samples-(cn + enp))
         
-        # save statistics
-        self.result['statistics'][t-1][0] = cp
-        self.result['statistics'][t-1][1] = epn
-        self.result['statistics'][t-1][2] = epp
-        self.result['statistics'][t-1][3] = cn
-        self.result['statistics'][t-1][4] = enp
-        self.result['statistics'][t-1][5] = enn
+        stat[0], stat[1], stat[2], stat[3], stat[4], stat[5] = cp, epn, epp, cn, enp, enn 
         
-    def get_confusion_matrix(self):
+        # save statistics
+        self.result['statistics'].append(stat)
+        
+    def get_confusion_matrix(self, out, target):
         # task specific confusion matrix 구하기
-        pass
-    def get_cosine_similarity(self):
-        # ground truth 와 prediction 사이의 
-        pass
-    def weight_norm(self):
-        pass
-    def get_feature_norm(self):
-        pass
+        if 'confusion_matrix' not in self.result:
+            self.result['confusion_matrix'] = []
+            
+        task_pred = out.data.max(1, keepdim=True)[1] // self.args.step_size
+        task_target = target // self.args.step_size
+        
+        matrix = confusion_matrix(task_target.data.cpu().numpy(), task_pred.data.cpu().numpy())
+        
+        self.result['confusion_matrix'].append(matrix)
+        
+        
+    def get_cosine_similarity(self, out, features, target):
+        # ground truth 와 prediction 사이의 cosine similarity
+        if 'cosine_similarity' not in self.result:
+            self.result['cosine_similarity'] = {}
+            self.result['cosine_similarity']['pred'] = []
+            self.result['cosine_similarity']['target'] = []
+        
+        weight = self.model.module.fc.weight
+        sample_size = out.shape[0]
+        pred = out.data.max(1, keepdim=True)[1]
+        normalized_features = features / torch.norm(features, 2, 1).unsqueeze(1)
+        normalized_weight = weight / torch.norm(weight, 2, 1).unsqueeze(1)
+        cos_sim_matrix = torch.matmul(normalized_features, normalized_weight.transpose(0,1))
+        pred_cos_sim = cos_sim_matrix[torch.arange(sample_size), pred].data.cpu().numpy()
+        target_cos_sim = cos_sim_matrix[torch.arange(sample_size), target].data.cpu().numpy()
+        
+        self.result['cosine_similarity']['pred'].append(pred_cos_sim)
+        self.result['cosine_similarity']['target'].append(target_cos_sim)
+        
+        return
+        
+    def get_weight_norm(self):
+        # get average weight norm of model
+        if 'weight_norm' not in self.result:
+            self.result['weight_norm'] = []
+        
+        end = self.train_iterator.dataset.end
+        weight = self.model.module.fc.weight
+        norm = torch.norm(weight, 2, 1).unsqueeze(1)
+        self.result['weight_norm'].append(norm[:end].data.cpu().numpy())
+        
+        return
+        
+    def get_features_norm(self, features):
+        if 'features_norm' not in self.result:
+            self.result['features_norm'] = []
+        
+        norm = torch.norm(features, 2, 1).unsqueeze(1)
+        
+        self.result['features_norm'].append(norm.data.cpu().numpy())
+        
+        return
     
+    def get_task_accuracy(self, start, end, iterator):
+        if 'task_accuracy' not in self.result:
+            self.result['task_accuracy'] = np.zeros((self.tasknum, self.tasknum))
+        
+        with torch.no_grad():
+        
+            out_matrix = []
+            target_matrix = []
+            for data, target in tqdm(iterator):
+                data, target = data.cuda(), target.cuda()
+                out = self.model(data)[:,start:end]
+                out_matrix.append(out)
+                target_matrix.append(target)
+
+            pred = out.data.max(1, keepdim=True)[1]
+
+            correct = pred.eq(target.data.view_as(pred)).sum().item()
+
+            self.result['task_accuracy'] = 100.*(correct / target.shape[0])
+            
+        return
     
     def update_moment(self):
         self.model.eval()
@@ -263,12 +330,17 @@ class ResultLogger():
         if self.args.prev_new:
             self.log_name += '_prev_new'
             
-            
+    def print_result(self, mode, t):
+        print(mode + " top-1: %0.2f"%self.result[mode + '-top-1'][t])
+        print(mode + " top-5: %0.2f"%self.result[mode + '-top-5'][t])
+        
+        return
+        
     def save_results(self):
         
-        path = log_name + '.pkl'
+        path = self.log_name + '.pkl'
         with open('result_data/' + path, "wb") as f:
-            pickle.dump(dic, f)
+            pickle.dump(self.result, f)
         
     def save_model(self):
         t = self.train_iterator.dataset.t

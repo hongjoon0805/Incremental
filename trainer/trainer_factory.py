@@ -91,3 +91,24 @@ class GenericTrainer:
                     print("Changing learning rate from %0.4f to %0.4f"%(self.current_lr,
                                                                         self.current_lr * self.args.gammas[temp]))
                     self.current_lr *= self.args.gammas[temp]
+                    
+    def increment_classes(self):
+        
+        self.train_data_iterator.dataset.update_exemplar()
+        self.train_data_iterator.dataset.task_change()
+
+    def setup_training(self, lr):
+        
+        for param_group in self.optimizer.param_groups:
+            print("Setting LR to %0.4f"%lr)
+            param_group['lr'] = lr
+            self.current_lr = lr
+
+    def update_frozen_model(self):
+        self.model.eval()
+        self.model_fixed = copy.deepcopy(self.model)
+        self.model_fixed.eval()
+        for param in self.model_fixed.parameters():
+            param.requires_grad = False
+
+
