@@ -53,7 +53,7 @@ class LSoftmaxLoss(nn.Module):
             logit = x.mm(w)
             indexes = range(logit.size(0))
             logit_target = logit[indexes, target]
-
+            save_logit = logit_target.clone().detach()
             # cos(theta) = w * x / ||w||*||x||
             w_target_norm = w[:, target].norm(p=2, dim=0)
             x_norm = x.norm(p=2, dim=1)
@@ -79,10 +79,16 @@ class LSoftmaxLoss(nn.Module):
             #print(logit[:, :end_class].shape, target.shape)
             res = self.loss(logit[:, :end_class], target)
             if torch.isnan(res):
-                print(logit[indexes, target])
-                print(logit_target_updated_beta)
-                for jj in range(999999999999):
-                    continue
+                #print(logit[indexes, target])
+                #print(logit_target_updated_beta)
+                for kk in range(len(logit_target_updated_beta)):
+                    if torch.isnan(logit_target_updated_beta[kk]):
+                        print(kk, x.mm(w)[indexes, target], save_logit[kk], cos_theta_target[kk], cos_m_theta_target[kk], logit_target_updated_beta[kk])
+                        print(w.T[target])
+                        break
+                
+                #for jj in range(999999999999):
+                    #continue
             return self.loss(logit[:, :end_class], target)
         else:
             assert target is None

@@ -68,13 +68,10 @@ class Trainer(GenericTrainer):
         :return: N/A. Only has side-affects 
         '''
         
-
-    def setup_training(self):
-        
         self.train_data_iterator.dataset.update_exemplar()
-        
         self.train_data_iterator.dataset.task_change()
-        self.test_data_iterator.dataset.task_change()
+        
+    def setup_training(self):
         
         for param_group in self.optimizer.param_groups:
             print("Setting LR to %0.2f"%self.args.lr)
