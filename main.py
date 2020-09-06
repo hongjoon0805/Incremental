@@ -112,24 +112,20 @@ for t in range(tasknum):
         print('Moment update finished')
     
     # IL2M mean update
-    elif args.trainer == 'il2m':
+    if args.trainer == 'il2m':
         logger.update_mean()
         print('Mean update finished')
     
     # WA weight align
-    if t > 0 and (args.trainer == 'ft_wa' or args.trainer == 'wa'):
+    if t > 0 and 'wa' in args.trainer:
         myTrainer.weight_align()   
     
     # EEIL balanced fine-tuning
     if t > 0 and args.trainer == 'eeil':
-        myTrainer.update_frozen_model()
         myTrainer.balance_fine_tune()
     
-    ############################################
-    #        BIC bias correction train         #
-    ############################################
-    
-    if 'bic' in args.trainer and t>0:
+    # BiC Bias correction
+    if t > 0 and 'bic' in args.trainer:
         incremental_loader.mode = 'bias'
         
         for e in range(total_epochs*2):

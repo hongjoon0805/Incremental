@@ -63,7 +63,7 @@ class IncrementalLoader(td.Dataset):
         self.tr_idx = range(self.train_start_idx, self.train_end_idx)
         
         # validation set for bic
-        if 'bic' in self.args.trainer and self.start < self.args.classes:
+        if 'bic' in self.args.trainer and self.start < self.classes:
             val_per_class = (self.validation_buffer_size//2) // self.args.step_size
             self.tr_idx = []
             for i in range(self.args.step_size):
