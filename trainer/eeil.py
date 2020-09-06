@@ -16,7 +16,16 @@ class Trainer(trainer.GenericTrainer):
         super().__init__(trainDataIterator, model, args, optimizer)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         
-
+    def update_bft_lr(self, epoch, schedule):
+        for temp in range(0, len(schedule)):
+            if schedule[temp] == epoch:
+                for param_group in self.bft_optimizer.param_groups:
+                    self.current_lr = param_group['lr']
+                    param_group['lr'] = self.current_lr * self.args.gammas[temp]
+                    print("Changing learning rate from %0.4f to %0.4f"%(self.current_lr,
+                                                                        self.current_lr * self.args.gammas[temp]))
+                    self.current_lr *= self.args.gammas[temp]
+    
     def balance_fine_tune(self):
         self.train_data_iterator.dataset.update_bft_buffer()
         self.train_data_iterator.dataset.mode = 'b-ft'

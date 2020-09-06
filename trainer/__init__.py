@@ -1,5 +1,6 @@
 from trainer.evaluator import *
 from trainer.trainer_factory import *
+from trainer.loss import *
 
 import numpy as np
 import torch
