@@ -19,7 +19,7 @@ class Trainer(trainer.GenericTrainer):
     
     def balance_fine_tune(self):
         self.update_frozen_model()
-        self.setup_training(self.args.lr / 10, bft=True)
+        self.setup_training(self.args.lr / 10)
         
         self.train_data_iterator.dataset.update_bft_buffer()
         self.train_data_iterator.dataset.mode = 'b-ft'

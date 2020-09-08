@@ -228,10 +228,10 @@ class ResultLogger():
     def update_moment(self):
         self.model.eval()
         
-        tasknum = train_iterator.dataset.t
+        tasknum = self.train_iterator.dataset.t
         with torch.no_grad():
             # compute means
-            classes = step_size * (tasknum+1)
+            classes = self.args.step_size * (tasknum+1)
             class_means = torch.zeros((classes,512)).cuda()
             totalFeatures = torch.zeros((classes, 1)).cuda()
             total = 0
@@ -292,7 +292,7 @@ class ResultLogger():
             self.train_iterator.dataset.mode = 'evaluate'
             for data, target in tqdm(self.train_iterator):
                 data, target = data.cuda(), target.cuda()
-                out = model(data)
+                out = self.model(data)
                 prob = F.softmax(out[:,:end], dim=1)
                 confidence = prob.max(dim=1)[0] * (target >= (end-step_size)).float()
                 class_means.index_add_(0, target, prob[torch.arange(data.shape[0]),target])

@@ -44,7 +44,7 @@ kwargs = {'num_workers': args.workers, 'pin_memory': True}
 
 incremental_loader.mode = 'train'
 train_iterator = torch.utils.data.DataLoader(incremental_loader,
-                                             batch_size=args.batch_size, shuffle=True, **kwargs)
+                                             batch_size=args.batch_size, shuffle=True, drop_last = True, **kwargs)
 
 # Iterator to iterate over test data
 incremental_loader.mode = 'test'
@@ -100,7 +100,7 @@ for t in range(tasknum):
             incremental_loader.mode = 'train'
             myTrainer.train(epoch)
             
-        if epoch % 2 == (1 - 1) and args.debug:
+        if epoch % 10 == (10 - 1) and args.debug:
             if args.trainer == 'icarl' or 'nem' in args.trainer:
                 logger.update_moment()
             logger.evaluate(mode='train', get_results = False)
