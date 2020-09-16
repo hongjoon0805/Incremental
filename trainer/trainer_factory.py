@@ -155,6 +155,6 @@ class LDAMLoss(nn.Module):
             
             all_index = index + logit_index
             
-            output = all_index * output - (1-all_index) * np.inf
+            output = all_index.float() * output - (1-all_index).float() * np.inf
             
             return F.multi_margin_loss(self.s*output, target, p=1, margin=0, weight=self.weight)
