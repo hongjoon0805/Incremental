@@ -36,6 +36,7 @@ class IncrementalLoader(td.Dataset):
         self.eval_idx = range(self.train_end_idx)
         
         self.memory_buffer = []
+        self.exemplar = []
         self.start_point = []
         self.end_point = []
         for i in range(self.classes):
@@ -204,7 +205,6 @@ class ResultLoader(td.Dataset):
         self.data = dataset.test_data
         self.labels = dataset.test_labels
         self.transform=dataset.test_transform
-        self.loader = dataset.loader
         
         
     def __len__(self):

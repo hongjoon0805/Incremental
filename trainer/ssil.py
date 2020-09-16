@@ -15,8 +15,8 @@ import networks
 import trainer
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, model, args, optimizer):
-        super().__init__(trainDataIterator, model, args, optimizer)
+    def __init__(self, IncrementalLoader, model, args):
+        super().__init__(IncrementalLoader, model, args)
         
         self.loss = torch.nn.CrossEntropyLoss(reduction='sum')
         
@@ -25,22 +25,20 @@ class Trainer(trainer.GenericTrainer):
         self.model.train()
         print("Epochs %d"%epoch)
         
-        tasknum = self.train_data_iterator.dataset.t
-        start = 0
-        end = self.train_data_iterator.dataset.end
+        tasknum = self.incremental_loader.t
+        end = self.incremental_loader.end
         mid = end-self.args.step_size
-        kwargs = {'num_workers': self.args.workers, 'pin_memory': True}
+        start = 0
         
-        exemplar_dataset_loaders = trainer.ExemplarLoader(self.train_data_iterator.dataset)
+        exemplar_dataset_loaders = trainer.ExemplarLoader(self.incremental_loader)
         exemplar_iterator = torch.utils.data.DataLoader(exemplar_dataset_loaders,
                                                         batch_size=self.args.replay_batch_size, 
-                                                        shuffle=True, drop_last=True, **kwargs)
-        
+                                                        shuffle=True, drop_last=True, **self.kwargs)
         
         if tasknum > 0:
-            iterator = zip(self.train_data_iterator, exemplar_iterator)
+            iterator = zip(self.train_iterator, exemplar_iterator)
         else:
-            iterator = self.train_data_iterator
+            iterator = self.train_iterator
             
         for samples in tqdm(iterator):
             if tasknum > 0:

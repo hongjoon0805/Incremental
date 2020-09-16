@@ -12,33 +12,36 @@ import pickle
 
 
 class ResultLogger():
-    def __init__(self, trainer, train_iterator, test_iterator, args):
+    def __init__(self, trainer, incremental_loader, args):
         
-        self.tasknum = (train_iterator.dataset.classes-args.base_classes)//args.step_size+1
+        self.tasknum = (incremental_loader.classes-args.base_classes)//args.step_size+1
         
         self.trainer = trainer
         self.model = trainer.model
-        self.train_iterator = train_iterator
-        self.test_iterator = test_iterator
+        self.incremental_loader = incremental_loader
         self.args = args
-        self.option = 'euclidean'
+        self.kwargs = {'num_workers': args.workers, 'pin_memory': True}
+        self.option = 'Mahalanobis'
         self.result = {}
         
         # For IL2M
-        classes = self.train_iterator.dataset.dataset.classes
+        classes = incremental_loader.classes
         self.init_class_means = torch.zeros(classes).cuda()
         self.current_class_means = torch.zeros(classes).cuda()
         self.model_confidence = torch.zeros(classes).cuda()
         
     def evaluate(self, mode = 'train', get_results = False):
         self.model.eval()
-        t = self.train_iterator.dataset.t
+        t = self.incremental_loader.t
         if mode == 'train':
-            self.train_iterator.dataset.mode = 'evaluate'
-            iterator = self.train_iterator
+            self.incremental_loader.mode = 'evaluate'
+            iterator = torch.utils.data.DataLoader(self.incremental_loader,
+                                                   batch_size=self.args.batch_size, shuffle=True, **self.kwargs)
+            
         elif mode == 'test':
-            self.train_iterator.dataset.mode = 'test'
-            iterator = self.test_iterator
+            self.incremental_loader.mode = 'test'
+            iterator = torch.utils.data.DataLoader(self.incremental_loader,
+                                                   batch_size=100, shuffle=False, **self.kwargs)
         
         with torch.no_grad():
             out_matrix = []
@@ -60,14 +63,14 @@ class ResultLogger():
             if mode == 'test' and get_results and t > 0:
                 self.get_statistics(out_matrix, target_matrix)
                 self.get_confusion_matrix(out_matrix, target_matrix)
-#                 self.get_cosine_similarity(out_matrix, features_matrix, target_matrix)
-#                 self.get_weight_norm()
-#                 self.get_features_norm(features_matrix)
+#                 self.get_cosine_similarity_score_average(out_matrix, features_matrix, target_matrix)
+                self.get_weight_norm()
+                self.get_features_norm(features_matrix)
 
             self.print_result(mode, t)
         
     def make_output(self, data):
-        end = self.train_iterator.dataset.end
+        end = self.incremental_loader.end
         step_size = self.args.step_size
         
         if 'bic' in self.args.trainer:
@@ -107,7 +110,7 @@ class ResultLogger():
             self.result[mode + '-top-1'] = np.zeros(self.tasknum)
             self.result[mode + '-top-5'] = np.zeros(self.tasknum)
             
-        t = self.train_iterator.dataset.t
+        t = self.incremental_loader.t
         
         pred_1 = out.data.max(1, keepdim=True)[1]
         pred_5 = torch.topk(out, 5, dim=1)[1]
@@ -125,8 +128,8 @@ class ResultLogger():
         
         stat = np.zeros(6)
         
-        t = self.train_iterator.dataset.t
-        end = self.train_iterator.dataset.end
+        t = self.incremental_loader.t
+        end = self.incremental_loader.end
         samples_per_classes = target.shape[0] // end
         old_samples = (end - self.args.step_size) * samples_per_classes 
         new_samples = out.shape[0] - old_samples
@@ -159,13 +162,33 @@ class ResultLogger():
         
         self.result['confusion_matrix'].append(matrix)
         
-        
-    def get_cosine_similarity(self, out, features, target):
+    def get_cosine_similarity_score_softmax_average(self, out, features, target):
         # ground truth 와 prediction 사이의 cosine similarity
         if 'cosine_similarity' not in self.result:
+            self.result['score'] = {}
+            self.result['softmax'] = {}
             self.result['cosine_similarity'] = {}
-            self.result['cosine_similarity']['pred'] = []
-            self.result['cosine_similarity']['target'] = []
+            
+            self.result['score']['old_class_pred'] = []
+            self.result['score']['new_class_pred'] = []
+            self.result['score']['epn'] = []
+            self.result['score']['enp'] = []
+            
+            self.result['softmax']['old_class_pred'] = []
+            self.result['softmax']['new_class_pred'] = []
+            self.result['softmax']['epn'] = []
+            self.result['softmax']['enp'] = []
+            
+            self.result['cosine_similarity']['old_class_pred'] = []
+            self.result['cosine_similarity']['new_class_pred'] = []
+            self.result['cosine_similarity']['epn'] = []
+            self.result['cosine_similarity']['enp'] = []
+        
+        t = self.incremental_loader.t
+        end = self.incremental_loader.end
+        mid = end - self.args.step_size
+        samples_per_classes = target.shape[0] // end
+        old_samples = (end - self.args.step_size) * samples_per_classes 
         
         weight = self.model.module.fc.weight
         sample_size = out.shape[0]
@@ -173,11 +196,36 @@ class ResultLogger():
         normalized_features = features / torch.norm(features, 2, 1).unsqueeze(1)
         normalized_weight = weight / torch.norm(weight, 2, 1).unsqueeze(1)
         cos_sim_matrix = torch.matmul(normalized_features, normalized_weight.transpose(0,1))
-        pred_cos_sim = cos_sim_matrix[torch.arange(sample_size), pred].data.cpu().numpy()
-        target_cos_sim = cos_sim_matrix[torch.arange(sample_size), target].data.cpu().numpy()
         
-        self.result['cosine_similarity']['pred'].append(pred_cos_sim)
-        self.result['cosine_similarity']['target'].append(target_cos_sim)
+        softmax = F.softmax(out, dim=1)
+        
+        old_class_pred, new_class_pred = pred < mid, pred >= mid
+        
+        old_score_avg, new_score_avg = out[old_class_pred].mean(), out[new_class_pred].mean()
+        old_softmax_avg, new_softmax_avg = softmax[old_class_pred].mean(), softmax[new_class_pred].mean()
+        old_cos_sim_avg, new_cos_sim_avg = cos_sim_matrix[old_class_pred].mean(), cos_sim_matrix[new_class_pred].mean()
+        
+        epn_mask, enp_mask = pred[:old_samples] >= mid, pred[old_samples:] < mid
+        
+        epn_score_avg, enp_score_avg = out[:old_samples][epn_mask].mean(), out[old_samples:][enp_mask].mean()
+        epn_softmax_avg, enp_softmax_avg = softmax[:old_samples][epn_mask].mean(), softmax[old_samples:][enp_mask].mean()
+        epn_cos_sim_avg = cos_sim_matrix[:old_samples][epn_mask].mean()
+        enp_cos_sim_avg = cos_sim_matrix[old_samples:][enp_mask].mean()
+        
+        self.result['score']['old_class_pred'].append(old_score_avg)
+        self.result['score']['new_class_pred'].append(new_score_avg)
+        self.result['score']['epn'].append(epn_score_avg)
+        self.result['score']['enp'].append(enp_score_avg)
+        
+        self.result['softmax']['old_class_pred'].append(old_softmax_avg)
+        self.result['softmax']['new_class_pred'].append(new_softmax_avg)
+        self.result['softmax']['epn'].append(epn_softmax_avg)
+        self.result['softmax']['enp'].append(enp_softmax_avg)
+        
+        self.result['cosine_similarity']['old_class_pred'].append(old_cos_sim_avg)
+        self.result['cosine_similarity']['new_class_pred'].append(new_cos_sim_avg)
+        self.result['cosine_similarity']['epn'].append(epn_cos_sim_avg)
+        self.result['cosine_similarity']['enp'].append(enp_cos_sim_avg)
         
         return
         
@@ -186,22 +234,58 @@ class ResultLogger():
         if 'weight_norm' not in self.result:
             self.result['weight_norm'] = []
         
-        end = self.train_iterator.dataset.end
+        end = self.incremental_loader.end
         weight = self.model.module.fc.weight
         norm = torch.norm(weight, 2, 1).unsqueeze(1)
+        
         self.result['weight_norm'].append(norm[:end].data.cpu().numpy())
         
         return
         
     def get_features_norm(self, features):
         if 'features_norm' not in self.result:
-            self.result['features_norm'] = []
+            self.result['features_norm'] = {}
+            self.result['features_norm']['old'] = []
+            self.result['features_norm']['new'] = []
+        
+        t = self.incremental_loader.t
+        end = self.incremental_loader.end
+        samples_per_classes = target.shape[0] // end
+        old_samples = (end - self.args.step_size) * samples_per_classes 
         
         norm = torch.norm(features, 2, 1).unsqueeze(1)
         
-        self.result['features_norm'].append(norm.data.cpu().numpy())
+        norm_old = norm[:old_samples].mean()
+        norm_new = norm[old_samples:].mean()
+        
+        self.result['features_norm']['old'].append(norm_old.data.cpu().numpy())
+        self.result['features_norm']['new'].append(norm_new.data.cpu().numpy())
         
         return
+    
+    def get_entropy(self, out, target):
+        if 'entropy' not in self.result:
+            self.result['entropy'] = {}
+            self.result['entropy']['old'] = []
+            self.result['entropy']['new'] = []
+        
+        
+        t = self.incremental_loader.t
+        end = self.incremental_loader.end
+        samples_per_classes = target.shape[0] // end
+        old_samples = (end - self.args.step_size) * samples_per_classes 
+        
+        prob = F.softmax(out, dim=1)
+        log_prob = F.log_softmax(out, dim=1)
+        
+        old_entropy = (-log_prob[:old_samples] * prob[:old_samples]).sum(dim=1).mean()
+        new_entropy = (-log_prob[old_samples:] * prob[old_samples:]).sum(dim=1).mean()
+        
+        self.result['entropy']['old'].append(old_entropy)
+        self.result['entropy']['new'].append(new_entropy)
+        
+        pass
+    
     
     def get_task_accuracy(self, start, end, iterator):
         if 'task_accuracy' not in self.result:
@@ -228,7 +312,7 @@ class ResultLogger():
     def update_moment(self):
         self.model.eval()
         
-        tasknum = self.train_iterator.dataset.t
+        tasknum = self.incremental_loader.t
         with torch.no_grad():
             # compute means
             classes = self.args.step_size * (tasknum+1)
@@ -236,8 +320,10 @@ class ResultLogger():
             totalFeatures = torch.zeros((classes, 1)).cuda()
             total = 0
             
-            self.train_iterator.dataset.mode = 'evaluate'
-            for data, target in tqdm(self.train_iterator):
+            self.incremental_loader.mode = 'evaluate'
+            iterator = torch.utils.data.DataLoader(self.incremental_loader,
+                                                   batch_size=self.args.batch_size, shuffle=True, **self.kwargs)
+            for data, target in tqdm(iterator):
                 data, target = data.cuda(), target.cuda()
                 if data.shape[0]<4:
                     continue
@@ -257,7 +343,7 @@ class ResultLogger():
             euclidean = torch.eye(512).cuda()
 
             if self.option == 'Mahalanobis':
-                for data, target in tqdm(self.train_iterator):
+                for data, target in tqdm(iterator):
                     data, target = data.cuda(), target.cuda()
                     _, features = self.model.forward(data, feature_return=True)
 
@@ -281,16 +367,18 @@ class ResultLogger():
         
     def update_mean(self):
         self.model.eval()
-        classes = self.train_iterator.dataset.dataset.classes
-        end = self.train_iterator.dataset.end
+        classes = self.incremental_loader.classes
+        end = self.incremental_loader.end
         step_size = self.args.step_size
         with torch.no_grad():
             class_means = torch.zeros(classes).cuda()
             class_count = torch.zeros(classes).cuda()
             current_count = 0
             
-            self.train_iterator.dataset.mode = 'evaluate'
-            for data, target in tqdm(self.train_iterator):
+            self.incremental_loader.mode = 'evaluate'
+            iterator = torch.utils.data.DataLoader(self.incremental_loader,
+                                                   batch_size=self.args.batch_size, shuffle=True, **self.kwargs)
+            for data, target in tqdm(iterator):
                 data, target = data.cuda(), target.cuda()
                 out = self.model(data)
                 prob = F.softmax(out[:,:end], dim=1)
@@ -344,7 +432,7 @@ class ResultLogger():
             pickle.dump(self.result, f)
         
     def save_model(self):
-        t = self.train_iterator.dataset.t
+        t = self.incremental_loader.t
         torch.save(self.model.state_dict(), './models/trained_model/' + self.log_name + '_task_{}.pt'.format(t))
         if 'bic' in self.args.trainer:
             torch.save(self.trainer.bias_correction_layer.state_dict(), 

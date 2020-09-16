@@ -12,8 +12,8 @@ import networks
 import trainer
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, model, args, optimizer):
-        super().__init__(trainDataIterator, model, args, optimizer)
+    def __init__(self, IncrementalLoader, model, args):
+        super().__init__(IncrementalLoader, model, args)
         
         #self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         self.loss = trainer.LSoftmaxLoss(2, model)
@@ -25,12 +25,12 @@ class Trainer(trainer.GenericTrainer):
         if epoch == 0:  # and args.loss == 'lmargin'
             self.loss.beta = 0
             
-        tasknum = self.train_data_iterator.dataset.t
-        end = self.train_data_iterator.dataset.end
+        tasknum = self.incremental_loader.t
+        end = self.incremental_loader.end
         mid = end - self.args.step_size
         loss_lsm = 0
         loss_cross = 0
-        for data, target in tqdm(self.train_data_iterator):
+        for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             
             output, feature = self.model(data, feature_return=True)
@@ -40,7 +40,6 @@ class Trainer(trainer.GenericTrainer):
             
             loss_CE = CEloss(output[:,:end], target)
             loss_cross += loss_CE
-          
             
             loss_CE = self.loss(feature, target, end)
             

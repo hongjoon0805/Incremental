@@ -39,41 +39,20 @@ incremental_loader = data_handler.IncrementalLoader(dataset, args)
 result_loader = data_handler.ResultLoader(dataset, args)
 result_loader.reset()
 
-# Iterator to iterate over training data.
-kwargs = {'num_workers': args.workers, 'pin_memory': True}
-
-incremental_loader.mode = 'train'
-train_iterator = torch.utils.data.DataLoader(incremental_loader,
-                                             batch_size=args.batch_size, shuffle=True, drop_last = True, **kwargs)
-
-# Iterator to iterate over test data
-incremental_loader.mode = 'test'
-test_iterator = torch.utils.data.DataLoader(incremental_loader, batch_size=100, shuffle=False, **kwargs)
-
 # Get the required model
 print(torch.cuda.device_count())
 if torch.cuda.device_count() > 1:
     print("Let's use", torch.cuda.device_count(), "GPUs!")
 
-
-# Define the optimizer used in the experiment
-optimizer = torch.optim.SGD(myModel.parameters(), args.lr, momentum=args.momentum,
-                            weight_decay=args.decay, nesterov=False)
-
 # Trainer object used for training
-myTrainer = trainer.TrainerFactory.get_trainer(train_iterator, myModel, args, optimizer)
-
-print(args.step_size)
+myTrainer = trainer.TrainerFactory.get_trainer(incremental_loader, myModel, args)
 
 schedule = np.array(args.schedule)
-
 tasknum = (dataset.classes-args.base_classes)//args.step_size+1
 total_epochs = args.nepochs
 
-print(tasknum)
-
 # initialize result logger
-logger = trainer.ResultLogger(myTrainer, train_iterator, test_iterator, args)
+logger = trainer.ResultLogger(myTrainer, incremental_loader, args)
 logger.make_log_name()
 
 for t in range(tasknum):
@@ -98,16 +77,20 @@ for t in range(tasknum):
             break
         else:
             incremental_loader.mode = 'train'
-            myTrainer.train(epoch)
+            if args.trainer == 'gda' and t>0:
+                myTrainer.train(epoch, mean = logger.class_means, precision = logger.precision)
+                
+            else:
+                myTrainer.train(epoch)
             
         if epoch % 10 == (10 - 1) and args.debug:
-            if args.trainer == 'icarl' or 'nem' in args.trainer:
+            if args.trainer == 'icarl' or 'nem' in args.trainer or args.trainer == 'gda':
                 logger.update_moment()
             logger.evaluate(mode='train', get_results = False)
             logger.evaluate(mode='test', get_results = False)
     
     # iCaRL prototype update
-    if args.trainer == 'icarl' or 'nem' in args.trainer:
+    if args.trainer == 'icarl' or 'nem' in args.trainer or args.trainer == 'gda':
         logger.update_moment()
         print('Moment update finished')
     
@@ -126,18 +109,16 @@ for t in range(tasknum):
     
     # BiC Bias correction
     if t > 0 and 'bic' in args.trainer:
-        incremental_loader.mode = 'bias'
-        
-        for e in range(total_epochs*2):
-            myTrainer.train_bias_correction(train_iterator)
-            myTrainer.update_bias_lr(e, schedule)
+        myTrainer.train_bias_correction()
             
     logger.evaluate(mode='train', get_results = False)
     logger.evaluate(mode='test', get_results = True)
     
     start = 0
     end = args.base_classes
+    
     result_loader.reset()
+    kwargs = {'num_workers': args.workers, 'pin_memory': True}
     iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
     for i in range(t+1):
         logger.get_task_accuracy(start, end, iterator)
@@ -147,6 +128,6 @@ for t in range(tasknum):
         
         result_loader.task_change()
     
-    
     myTrainer.increment_classes()
     logger.save_results()
+    logger.save_model()

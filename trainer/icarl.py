@@ -1,9 +1,3 @@
-''' Incremental-Classifier Learning 
- Authors : Khurram Javed, Muhammad Talha Paracha
- Maintainer : Khurram Javed
- Lab : TUKL-SEECS R&D Lab
- Email : 14besekjaved@seecs.edu.pk '''
-
 from __future__ import print_function
 
 import copy
@@ -18,8 +12,8 @@ import networks
 import trainer
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, model, args, optimizer):
-        super().__init__(trainDataIterator, model, args, optimizer)
+    def __init__(self, IncrementalLoader, model, args):
+        super().__init__(IncrementalLoader, model, args)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
 
     def train(self, epoch):
@@ -29,11 +23,11 @@ class Trainer(trainer.GenericTrainer):
         self.model.train()
         print("Epochs %d"%epoch)
         
-        tasknum = self.train_data_iterator.dataset.t
-        end = self.train_data_iterator.dataset.end
+        tasknum = self.incremental_loader.t
+        end = self.incremental_loader.end
         start = end-self.args.step_size
         
-        for data, target in tqdm(self.train_data_iterator):
+        for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             
             mask_new = target >= start

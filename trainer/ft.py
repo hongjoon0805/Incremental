@@ -12,21 +12,25 @@ import networks
 import trainer
 
 class Trainer(trainer.GenericTrainer):
-    def __init__(self, trainDataIterator, model, args, optimizer):
-        super().__init__(trainDataIterator, model, args, optimizer)
+    def __init__(self, IncrementalLoader, model, args):
+        super().__init__(IncrementalLoader, model, args)
         
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
-
+        
     def train(self, epoch):
         
         self.model.train()
         print("Epochs %d"%epoch)
         
-        tasknum = self.train_data_iterator.dataset.t
-        end = self.train_data_iterator.dataset.end
+        tasknum = self.incremental_loader.t
+        end = self.incremental_loader.end
         mid = end - self.args.step_size
         
-        for data, target in tqdm(self.train_data_iterator):
+        if 'Hinge' in self.args.date:
+            cls_num_list = np.ones(end)
+            self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
+        
+        for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             
             output = self.model(data)

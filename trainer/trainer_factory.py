@@ -6,13 +6,14 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.utils.data as td
+from PIL import Image
 
 class TrainerFactory():
     def __init__(self):
         pass
 
     @staticmethod
-    def get_trainer(train_iterator, myModel, args, optimizer):
+    def get_trainer(train_iterator, myModel, args):
         
         if args.trainer == 'lwf':
             import trainer.lwf as trainer
@@ -38,18 +39,16 @@ class TrainerFactory():
             import trainer.FCft as trainer
         elif args.trainer == 'ft_lsm':
             import trainer.ft_lsm as trainer
-        return trainer.Trainer(train_iterator, myModel, args, optimizer)
+        return trainer.Trainer(train_iterator, myModel, args)
     
 
 class ExemplarLoader(td.Dataset):
     def __init__(self, train_dataset):
         
-        self.data = train_dataset.data
-        self.labels = train_dataset.labels
-        self.labelsNormal = train_dataset.labelsNormal
+        self.data = train_dataset.dataset.train_data
+        self.labels = train_dataset.dataset.train_labels
         self.exemplar = train_dataset.exemplar
-        self.transform = train_dataset.transform
-        self.loader = train_dataset.loader
+        self.transform = train_dataset.dataset.train_transform
         self.mem_sz = len(self.exemplar)
 
     def __len__(self):
@@ -61,24 +60,29 @@ class ExemplarLoader(td.Dataset):
         try:
             img = Image.fromarray(img)
         except:
-            img = self.loader(img)
+            img = Image.open(img, mode='r').convert('RGB')
             
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, self.labelsNormal[index]
+        return img, self.labels[index]
 
 class GenericTrainer:
     '''
     Base class for trainer; to implement a new training routine, inherit from this. 
     '''
 
-    def __init__(self, trainDataIterator, model, args, optimizer):
-        self.train_data_iterator = trainDataIterator
+    def __init__(self, IncrementalLoader, model, args):
+        self.incremental_loader = IncrementalLoader
         self.model = model
         self.args = args
-        self.incremental_loader = self.train_data_iterator.dataset
-        self.optimizer = optimizer
+        self.kwargs = {'num_workers': args.workers, 'pin_memory': True}
+        self.incremental_loader.mode = 'train'
+        self.train_iterator = torch.utils.data.DataLoader(self.incremental_loader,
+                                                   batch_size=self.args.batch_size, drop_last=True, 
+                                                          shuffle=True, **self.kwargs)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), args.lr, momentum=args.momentum,
+                                         weight_decay=args.decay, nesterov=False)
         self.model_fixed = copy.deepcopy(self.model)
         for param in self.model_fixed.parameters():
             param.requires_grad = False
@@ -96,8 +100,8 @@ class GenericTrainer:
                     
     def increment_classes(self):
         
-        self.train_data_iterator.dataset.update_exemplar()
-        self.train_data_iterator.dataset.task_change()
+        self.incremental_loader.update_exemplar()
+        self.incremental_loader.task_change()
 
     def setup_training(self, lr):
         
@@ -113,4 +117,44 @@ class GenericTrainer:
         for param in self.model_fixed.parameters():
             param.requires_grad = False
 
+class LDAMLoss(nn.Module):
+    
+    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=30, mode = 'CrossEntropy'):
+        super(LDAMLoss, self).__init__()
+        m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
+        m_list = m_list * (max_m / np.max(m_list))
+        m_list = torch.cuda.FloatTensor(m_list)
+        self.m_list = m_list
+        assert s > 0
+        self.s = s
+        self.weight = weight
+        self.mode = mode
 
+    def forward(self, x, target):
+        
+        index = torch.zeros_like(x, dtype=torch.uint8)
+        index.scatter_(1, target.data.view(-1, 1), 1)
+        
+#         output = x - index * self.m_list
+        
+        index_float = index.type(torch.cuda.FloatTensor)
+        batch_m = torch.matmul(self.m_list[None, :], index_float.transpose(0,1))
+        batch_m = batch_m.view((-1, 1))
+        x_m = x - batch_m
+    
+        output = torch.where(index, x_m, x)
+        if self.mode == 'CrossEntropy':
+            return F.cross_entropy(self.s*output, target, weight=self.weight)
+        
+        elif self.mode == 'Hinge':
+            # output 조작
+            aux = x - index * np.inf
+            max_idx = aux.max(1)[1]
+            logit_index = torch.zeros_like(x, dtype=torch.uint8)
+            logit_index.scatter_(1, max_idx.data.view(-1,1), 1)
+            
+            all_index = index + logit_index
+            
+            output = all_index * output - (1-all_index) * np.inf
+            
+            return F.multi_margin_loss(self.s*output, target, p=1, margin=0, weight=self.weight)
