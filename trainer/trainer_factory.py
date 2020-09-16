@@ -148,13 +148,15 @@ class LDAMLoss(nn.Module):
         
         elif self.mode == 'Hinge':
             # output 조작
-            aux = x - index * np.inf
+            aux = x - index_float * np.inf
             max_idx = aux.max(1)[1]
             logit_index = torch.zeros_like(x, dtype=torch.uint8)
             logit_index.scatter_(1, max_idx.data.view(-1,1), 1)
             
-            all_index = index + logit_index
+            logit_index_float = logit_index.type(torch.cuda.FloatTensor)
             
-            output = all_index.float() * output - (1-all_index).float() * np.inf
+            all_index = index_float + logit_index_float
+            
+            output = all_index * output - (1-all_index) * np.inf
             
             return F.multi_margin_loss(self.s*output, target, p=1, margin=0, weight=self.weight)
