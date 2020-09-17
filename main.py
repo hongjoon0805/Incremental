@@ -4,6 +4,7 @@ import torch
 import torch.utils.data as td
 import numpy as np
 import scipy.io as sio
+import copy
 
 import data_handler
 import networks
@@ -64,21 +65,31 @@ for t in range(tasknum):
         lr = args.lr / (t+1)
         if t==1:
             total_epochs = args.nepochs // args.factor
-            schedule = schedule // args.factor
+            schedule = schedule //  args.factor
     
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
-    
+    flag = 0
+    if args.trainer == 'gda' and t==0:
+        name = 'models/trained_model/200729_FT_BIC_Imagenet_ft_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_0.pt'
+        state_dict = torch.load(name)
+        myTrainer.model.load_state_dict(state_dict)
+        flag = 1
     # Running nepochs epochs
+    if t>0 and args.trainer == 'gda':
+        mean = copy.deepcopy(logger.class_means)
+        precision = copy.deepcopy(logger.precision)
     for epoch in range(0, total_epochs):
-        
+        if flag == 1:
+            print('Evaluation!')
+            break
         myTrainer.update_lr(epoch, schedule)
         if args.trainer == 'il2m':
             break
         else:
             incremental_loader.mode = 'train'
             if args.trainer == 'gda' and t>0:
-                myTrainer.train(epoch, mean = logger.class_means, precision = logger.precision)
+                myTrainer.train(epoch, mean, precision)
                 
             else:
                 myTrainer.train(epoch)
@@ -104,8 +115,10 @@ for t in range(tasknum):
         myTrainer.weight_align()   
     
     # EEIL balanced fine-tuning
-    if t > 0 and args.trainer == 'eeil':
+    if t > 0 and args.bft:
+        logger.save_model('_before_bft')
         myTrainer.balance_fine_tune()
+        
     
     # BiC Bias correction
     if t > 0 and 'bic' in args.trainer:
@@ -121,7 +134,7 @@ for t in range(tasknum):
     kwargs = {'num_workers': args.workers, 'pin_memory': True}
     iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
     for i in range(t+1):
-        logger.get_task_accuracy(start, end, iterator)
+        logger.get_task_accuracy(start, end, t, iterator)
         
         start = end
         end += args.step_size

@@ -19,7 +19,7 @@ class Trainer(trainer.GenericTrainer):
     
     def balance_fine_tune(self):
         self.update_frozen_model()
-        self.setup_training(self.args.lr / 100)
+        self.setup_training(self.args.bft_lr)
         
         self.incremental_loader.update_bft_buffer()
         self.incremental_loader.mode = 'b-ft'
@@ -43,8 +43,10 @@ class Trainer(trainer.GenericTrainer):
         
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
-            
-            output = self.model(data)[:,:end]
+            try:
+                output = self.model(data)[:,:end]
+            except:
+                continue
             loss_CE = self.loss(output, target)
             
             loss_KD = 0

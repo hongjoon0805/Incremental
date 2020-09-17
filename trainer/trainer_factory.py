@@ -37,6 +37,8 @@ class TrainerFactory():
             import trainer.ft_bic_focal as trainer
         elif args.trainer == 'FCft':
             import trainer.FCft as trainer
+        elif args.trainer == 'gda':
+            import trainer.gda as trainer
         elif args.trainer == 'ft_lsm':
             import trainer.ft_lsm as trainer
         return trainer.Trainer(train_iterator, myModel, args)

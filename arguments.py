@@ -9,6 +9,8 @@ def get_args():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                         help='learning rate (default: 0.1. Note that lr is decayed by args.gamma parameter args.schedule ')
+    parser.add_argument('--bft-lr', type=float, default=0.01, metavar='LR',
+                        help='learning rate (default: 0.1. Note that lr is decayed by args.gamma parameter args.schedule ')
     parser.add_argument('--schedule', type=int, nargs='+', default=[40,80],
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--gammas', type=float, nargs='+', default=[0.1, 0.1],
@@ -43,6 +45,8 @@ def get_args():
                                  'naive',], 
                         help='(default=%(default)s)')
     
+    parser.add_argument('--bft', action='store_true', default=False, help='Use Balanced fine-tuning')
+    
     parser.add_argument('--trainer', default='', type=str, required=True,
                         choices=['lwf', 
                                  'ssil', 
@@ -57,7 +61,8 @@ def get_args():
                                  'ft_wa',
                                  'ft_bic_focal',
                                  'eeil',
-                                 'FCft',
+                                 'FCft', 
+                                 'gda',
                                  'ft_lsm'], 
                         help='(default=%(default)s)')
     parser.add_argument('--distill', default='None', type=str, required=False,

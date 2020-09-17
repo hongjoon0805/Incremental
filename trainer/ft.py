@@ -17,6 +17,15 @@ class Trainer(trainer.GenericTrainer):
         
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         
+    def balance_fine_tune(self):
+        self.update_frozen_model()
+        
+        self.incremental_loader.update_bft_buffer()
+        self.incremental_loader.mode = 'b-ft'
+        
+        for epoch in range(15):
+            self.train(epoch)
+        
     def train(self, epoch):
         
         self.model.train()

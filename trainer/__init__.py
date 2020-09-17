@@ -21,7 +21,7 @@ class ResultLogger():
         self.incremental_loader = incremental_loader
         self.args = args
         self.kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.option = 'Mahalanobis'
+        self.option = 'Euclidean'
         self.result = {}
         
         # For IL2M
@@ -65,7 +65,7 @@ class ResultLogger():
                 self.get_confusion_matrix(out_matrix, target_matrix)
 #                 self.get_cosine_similarity_score_average(out_matrix, features_matrix, target_matrix)
                 self.get_weight_norm()
-                self.get_features_norm(features_matrix)
+#                 self.get_features_norm(features_matrix)
 
             self.print_result(mode, t)
         
@@ -93,8 +93,8 @@ class ResultLogger():
                                  * (self.model_confidence[end-1] / self.model_confidence[:end])
                 out = (1-mask).float() * prob + mask.float() * rect_prob
             
-        elif self.args.trainer == 'icarl' or 'nem' in self.args.trainer:
-            _, features = model.forward(data, feature_return=True)
+        elif self.args.trainer == 'icarl' or 'nem' in self.args.trainer or self.args.trainer == 'gda':
+            _, features = self.model.forward(data, feature_return=True)
             batch_vec = (features.data.unsqueeze(1) - self.class_means.unsqueeze(0))
             temp = torch.matmul(batch_vec, self.precision)
             out = -torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3)).squeeze()
@@ -287,7 +287,7 @@ class ResultLogger():
         pass
     
     
-    def get_task_accuracy(self, start, end, iterator):
+    def get_task_accuracy(self, start, end, t, iterator):
         if 'task_accuracy' not in self.result:
             self.result['task_accuracy'] = np.zeros((self.tasknum, self.tasknum))
         
@@ -304,8 +304,8 @@ class ResultLogger():
             pred = out.data.max(1, keepdim=True)[1]
 
             correct = pred.eq(target.data.view_as(pred)).sum().item()
-
-            self.result['task_accuracy'] = 100.*(correct / target.shape[0])
+            task = iterator.dataset.t
+            self.result['task_accuracy'][t][task] = 100.*(correct / target.shape[0])
             
         return
     
@@ -349,7 +349,6 @@ class ResultLogger():
 
                     vec = (features.data - class_means[target])
                     
-                    np.expand_dims(vec, axis=2)
                     cov = torch.matmul(vec.unsqueeze(2), vec.unsqueeze(1)).sum(dim=0)
                     covariance += cov
 
@@ -409,7 +408,10 @@ class ResultLogger():
 
         if self.args.distill != 'None':
             self.log_name += '_distill_{}'.format(self.args.distill)
-            
+        
+        if self.args.bft:
+            self.log_name += '_bft_lr_{}'.format(self.args.bft_lr)
+        
         if self.args.trainer == 'ssil':
             self.log_name += '_replay_{}'.format(self.args.replay_batch_size)
             
