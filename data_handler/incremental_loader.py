@@ -44,7 +44,17 @@ class IncrementalLoader(td.Dataset):
             self.end_point.append(np.argmax(self.dataset.train_labels>(i)))
             self.memory_buffer.append([])
         self.end_point[-1] = len(self.dataset.train_labels)
-        
+    
+    def get_num_cls_list(self):
+        li = []
+        # t > 0 인 상황에서만 사용한다고 가정
+        for i in range(self.end):
+            if i < self.start:
+                li.append(len(self.memory_buffer[i]))
+            else:
+                li.append(self.end_point[i] - self.start_point[i])
+        return li
+    
     def task_change(self):
         self.t += 1
         

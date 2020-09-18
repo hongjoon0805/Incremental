@@ -36,7 +36,7 @@ class Trainer(trainer.GenericTrainer):
         end = self.incremental_loader.end
         mid = end-self.args.step_size
         start = 0
-        
+        lamb = mid / end
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
 
@@ -54,6 +54,6 @@ class Trainer(trainer.GenericTrainer):
                 loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
                         
             self.optimizer.zero_grad()
-            (loss_KD + loss_CE).backward()
+            (lamb * loss_KD + (1-lamb) * loss_CE).backward()
             self.optimizer.step()
 
