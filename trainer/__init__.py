@@ -55,17 +55,17 @@ class ResultLogger():
                 features_matrix.append(features)
                 target_matrix.append(target)
                 
-            out_matrix = torch.cat(out_matrix, dim=0)
-            features_matrix = torch.cat(features_matrix, dim=0)
-            target_matrix = torch.cat(target_matrix, dim=0)
-            self.get_accuracy(mode, out_matrix, target_matrix)
+            out = torch.cat(out_matrix, dim=0)
+            features = torch.cat(features_matrix, dim=0)
+            target = torch.cat(target_matrix, dim=0)
+            self.get_accuracy(mode, out, target)
             
             if mode == 'test' and get_results and t > 0:
-                self.get_statistics(out_matrix, target_matrix)
-                self.get_confusion_matrix(out_matrix, target_matrix)
-#                 self.get_cosine_similarity_score_average(out_matrix, features_matrix, target_matrix)
+                self.get_statistics(out, target)
+                self.get_confusion_matrix(out, target)
+#                 self.get_cosine_similarity_score_average(out, features, target)
                 self.get_weight_norm()
-#                 self.get_features_norm(features_matrix)
+#                 self.get_features_norm(features)
 
             self.print_result(mode, t)
         
@@ -118,15 +118,15 @@ class ResultLogger():
         correct_1 = pred_1.eq(target.data.view_as(pred_1)).sum().item()
         correct_5 = pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).sum().item()
         
-        self.result[mode+'-top-1'][t] = 100.*(correct_1 / target.shape[0])
-        self.result[mode+'-top-5'][t] = 100.*(correct_5 / target.shape[0])
+        self.result[mode+'-top-1'][t] = round(100.*(correct_1 / target.shape[0]), 2)
+        self.result[mode+'-top-5'][t] = round(100.*(correct_5 / target.shape[0]), 2)
         
         
     def get_statistics(self, out, target):
         if 'statistics' not in self.result:
             self.result['statistics'] = []
         
-        stat = np.zeros(6)
+        stat = [0,0,0,0,0,0]
         
         t = self.incremental_loader.t
         end = self.incremental_loader.end
@@ -297,10 +297,14 @@ class ResultLogger():
             target_matrix = []
             for data, target in tqdm(iterator):
                 data, target = data.cuda(), target.cuda()
+                target = target % (end-start)
                 out = self.model(data)[:,start:end]
                 out_matrix.append(out)
                 target_matrix.append(target)
 
+            out = torch.cat(out_matrix)
+            target = torch.cat(target_matrix)
+            
             pred = out.data.max(1, keepdim=True)[1]
 
             correct = pred.eq(target.data.view_as(pred)).sum().item()

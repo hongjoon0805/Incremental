@@ -221,6 +221,7 @@ class ResultLoader(td.Dataset):
         return len(self.test_idx)
     
     def reset(self):
+        self.t = 0
         self.start = 0
         self.end = self.args.base_classes
         self.start_idx = 0
