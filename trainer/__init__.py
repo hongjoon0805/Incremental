@@ -1,6 +1,4 @@
-from trainer.evaluator import *
 from trainer.trainer_factory import *
-from trainer.loss import *
 
 import numpy as np
 import torch
@@ -448,9 +446,9 @@ class ResultLogger():
         with open('result_data/' + path, "wb") as f:
             pickle.dump(self.result, f)
         
-    def save_model(self):
+    def save_model(self, add_name = ''):
         t = self.incremental_loader.t
-        torch.save(self.model.state_dict(), './models/trained_model/' + self.log_name + '_task_{}.pt'.format(t))
+        torch.save(self.model.state_dict(), './models/trained_model/' + self.log_name + add_name + '_task_{}.pt'.format(t))
         if 'bic' in self.args.trainer:
             torch.save(self.trainer.bias_correction_layer.state_dict(), 
                        './models/trained_model/' + self.log_name + '_bias' + '_task_{}.pt'.format(t))

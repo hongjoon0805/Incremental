@@ -116,7 +116,7 @@ for t in range(tasknum):
     
     # EEIL balanced fine-tuning
     if t > 0 and args.bft:
-        logger.save_model('_before_bft')
+        logger.save_model(add_name = '_before_bft')
         myTrainer.balance_fine_tune()
         
     
