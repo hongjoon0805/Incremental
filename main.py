@@ -70,7 +70,7 @@ for t in range(tasknum):
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
     flag = 0
-    if args.trainer == 'gda' and t==0:
+    if (args.trainer == 'gda' or args.trainer == 'ft' or args.trainer == 'ssil') and t==0:
         name = 'models/trained_model/200729_FT_BIC_Imagenet_ft_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_0.pt'
         state_dict = torch.load(name)
         myTrainer.model.load_state_dict(state_dict)
