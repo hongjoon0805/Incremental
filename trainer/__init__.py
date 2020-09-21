@@ -50,7 +50,10 @@ class ResultLogger():
             
             for data, target in tqdm(iterator):
                 data, target = data.cuda(), target.cuda()
-                out, features = self.make_output(data)
+                try:
+                    out, features = self.make_output(data)
+                except:
+                    continue
                 out_matrix.append(out)
                 features_matrix.append(features)
                 target_matrix.append(target)
@@ -63,9 +66,10 @@ class ResultLogger():
             if mode == 'test' and get_results and t > 0:
                 self.get_statistics(out, target)
                 self.get_confusion_matrix(out, target)
-#                 self.get_cosine_similarity_score_average(out, features, target)
+                self.get_cosine_similarity_score_softmax_average(out, features, target)
                 self.get_weight_norm()
-#                 self.get_features_norm(features)
+                self.get_features_norm(features)
+                self.get_entropy(out, target)
 
             self.print_result(mode, t)
         
@@ -126,7 +130,7 @@ class ResultLogger():
         if 'statistics' not in self.result:
             self.result['statistics'] = []
         
-        stat = [0,0,0,0,0,0]
+        stat = {}
         
         t = self.incremental_loader.t
         end = self.incremental_loader.end
@@ -138,14 +142,14 @@ class ResultLogger():
         pred_old, pred_new = out_old.data.max(1, keepdim=True)[1], out_new.data.max(1, keepdim=True)[1]
         
         # statistics
-        cp = pred_old.eq(target_old.data.view_as(pred_old)).sum()
-        epn = (pred_old >= end-self.args.step_size).int().sum()
-        epp = (old_samples-(cp + epn))
-        cn = pred_new.eq(target_new.data.view_as(pred_new)).sum()
-        enp = (pred_new < end-self.args.step_size).int().sum()
-        enn = (new_samples-(cn + enp))
+        cp = pred_old.eq(target_old.data.view_as(pred_old)).sum().item()
+        epp = (old_samples-(cp + epn)).item()
+        epn = (pred_old >= end-self.args.step_size).int().sum().item()
+        cn = pred_new.eq(target_new.data.view_as(pred_new)).sum().item()
+        enn = (new_samples-(cn + enp)).item()
+        enp = (pred_new < end-self.args.step_size).int().sum().item()
         
-        stat[0], stat[1], stat[2], stat[3], stat[4], stat[5] = cp, epn, epp, cn, enp, enn 
+        stat['cp'], stat['epp'], stat['epn'], stat['cn'], stat['enn'], stat['enp'] = cp, epp, epn, cn, enn, enp
         
         # save statistics
         self.result['statistics'].append(stat)
@@ -197,35 +201,42 @@ class ResultLogger():
         normalized_weight = weight / torch.norm(weight, 2, 1).unsqueeze(1)
         cos_sim_matrix = torch.matmul(normalized_features, normalized_weight.transpose(0,1))
         
-        softmax = F.softmax(out, dim=1)
+        print(cos_sim_matrix.shape)
+        
+        softmax = F.softmax(out[:,:end], dim=1)
         
         old_class_pred, new_class_pred = pred < mid, pred >= mid
         
-        old_score_avg, new_score_avg = out[old_class_pred].mean(), out[new_class_pred].mean()
-        old_softmax_avg, new_softmax_avg = softmax[old_class_pred].mean(), softmax[new_class_pred].mean()
-        old_cos_sim_avg, new_cos_sim_avg = cos_sim_matrix[old_class_pred].mean(), cos_sim_matrix[new_class_pred].mean()
+        pred_score = out[pred]
+        pred_softmax = softmax[pred]
+        pred_cos_sim = cos_sim_matrix[pred]
+        
+        old_score_avg, new_score_avg = pred_score[old_class_pred].mean(), pred_score[new_class_pred].mean()
+        old_softmax_avg, new_softmax_avg = pred_softmax[old_class_pred].mean(), pred_softmax[new_class_pred].mean()
+        old_cos_sim_avg, new_cos_sim_avg = pred_cos_sim[old_class_pred].mean(), pred_cos_sim[new_class_pred].mean()
         
         epn_mask, enp_mask = pred[:old_samples] >= mid, pred[old_samples:] < mid
         
-        epn_score_avg, enp_score_avg = out[:old_samples][epn_mask].mean(), out[old_samples:][enp_mask].mean()
-        epn_softmax_avg, enp_softmax_avg = softmax[:old_samples][epn_mask].mean(), softmax[old_samples:][enp_mask].mean()
-        epn_cos_sim_avg = cos_sim_matrix[:old_samples][epn_mask].mean()
-        enp_cos_sim_avg = cos_sim_matrix[old_samples:][enp_mask].mean()
+        epn_score_avg, enp_score_avg = pred_score[:old_samples][epn_mask].mean(), pred_score[old_samples:][enp_mask].mean()
+        epn_softmax_avg = pred_softmax[:old_samples][epn_mask].mean()
+        enp_softmax_avg = pred_softmax[old_samples:][enp_mask].mean()
+        epn_cos_sim_avg = pred_cos_sim[:old_samples][epn_mask].mean()
+        enp_cos_sim_avg = pred_cos_sim[old_samples:][enp_mask].mean()
         
-        self.result['score']['old_class_pred'].append(old_score_avg)
-        self.result['score']['new_class_pred'].append(new_score_avg)
-        self.result['score']['epn'].append(epn_score_avg)
-        self.result['score']['enp'].append(enp_score_avg)
+        self.result['score']['old_class_pred'].append(old_score_avg.item())
+        self.result['score']['new_class_pred'].append(new_score_avg.item())
+        self.result['score']['epn'].append(epn_score_avg.item())
+        self.result['score']['enp'].append(enp_score_avg.item())
         
-        self.result['softmax']['old_class_pred'].append(old_softmax_avg)
-        self.result['softmax']['new_class_pred'].append(new_softmax_avg)
-        self.result['softmax']['epn'].append(epn_softmax_avg)
-        self.result['softmax']['enp'].append(enp_softmax_avg)
+        self.result['softmax']['old_class_pred'].append(old_softmax_avg.item())
+        self.result['softmax']['new_class_pred'].append(new_softmax_avg.item())
+        self.result['softmax']['epn'].append(epn_softmax_avg.item())
+        self.result['softmax']['enp'].append(enp_softmax_avg.item())
         
-        self.result['cosine_similarity']['old_class_pred'].append(old_cos_sim_avg)
-        self.result['cosine_similarity']['new_class_pred'].append(new_cos_sim_avg)
-        self.result['cosine_similarity']['epn'].append(epn_cos_sim_avg)
-        self.result['cosine_similarity']['enp'].append(enp_cos_sim_avg)
+        self.result['cosine_similarity']['old_class_pred'].append(old_cos_sim_avg.item())
+        self.result['cosine_similarity']['new_class_pred'].append(new_cos_sim_avg.item())
+        self.result['cosine_similarity']['epn'].append(epn_cos_sim_avg.item())
+        self.result['cosine_similarity']['enp'].append(enp_cos_sim_avg.item())
         
         return
         
@@ -250,7 +261,7 @@ class ResultLogger():
         
         t = self.incremental_loader.t
         end = self.incremental_loader.end
-        samples_per_classes = target.shape[0] // end
+        samples_per_classes = features.shape[0] // end
         old_samples = (end - self.args.step_size) * samples_per_classes 
         
         norm = torch.norm(features, 2, 1).unsqueeze(1)
