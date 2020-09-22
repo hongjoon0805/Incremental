@@ -90,7 +90,7 @@ class ResultLogger():
             if end > step_size:
                 pred = out.data.max(1, keepdim=True)[1]
                 mask = (pred >= end-step_size).int()
-                prob = F.softmax(out, dim=1)
+                prob = F.softmax(out[:,:end], dim=1)
                 rect_prob = prob * (self.init_class_means[:end] / self.current_class_means[:end]) \
                                  * (self.model_confidence[end-1] / self.model_confidence[:end])
                 out = (1-mask).float() * prob + mask.float() * rect_prob
@@ -264,11 +264,11 @@ class ResultLogger():
         
         norm = torch.norm(features, 2, 1).unsqueeze(1)
         
-        norm_old = norm[:old_samples].mean()
-        norm_new = norm[old_samples:].mean()
+        norm_old = norm[:old_samples].mean().item()
+        norm_new = norm[old_samples:].mean().item()
         
-        self.result['features_norm']['old'].append(norm_old.data.cpu().numpy())
-        self.result['features_norm']['new'].append(norm_new.data.cpu().numpy())
+        self.result['features_norm']['old'].append(norm_old)
+        self.result['features_norm']['new'].append(norm_new)
         
         return
     
@@ -284,14 +284,14 @@ class ResultLogger():
         samples_per_classes = target.shape[0] // end
         old_samples = (end - self.args.step_size) * samples_per_classes 
         
-        prob = F.softmax(out, dim=1)
-        log_prob = F.log_softmax(out, dim=1)
+        prob = F.softmax(out[:,:end], dim=1)
+        log_prob = F.log_softmax(out[:,:end], dim=1)
         
         old_entropy = (-log_prob[:old_samples] * prob[:old_samples]).sum(dim=1).mean()
         new_entropy = (-log_prob[old_samples:] * prob[old_samples:]).sum(dim=1).mean()
         
-        self.result['entropy']['old'].append(old_entropy)
-        self.result['entropy']['new'].append(new_entropy)
+        self.result['entropy']['old'].append(old_entropy.item())
+        self.result['entropy']['new'].append(new_entropy.item())
         
         pass
     

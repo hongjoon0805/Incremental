@@ -37,7 +37,15 @@ class Trainer(trainer.GenericTrainer):
         
         if 'Hinge' in self.args.date:
             cls_num_list = np.ones(end)
-            self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
+            cls_num_list = self.incremental_loader.get_cls_num_list()
+            
+            #self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
+            #self.loss = trainer.LDAMLoss(cls_num_list)
+            self.loss = torch.nn.MultiMarginloss(reduction='none')
+        
+        #if self.incremental_loader.t == 0:
+            #self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
+
         
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
@@ -61,6 +69,10 @@ class Trainer(trainer.GenericTrainer):
 
             else:
                 loss_CE = self.loss(output[:,:end], target)
+            
+            print("loss",loss_CE)
++           loss_CE = loss_CE.mean()
++           print(loss_CE, torch.min(output[:, :end]), torch.max(output[:,:end]))
             
             self.optimizer.zero_grad()
             (loss_CE).backward()

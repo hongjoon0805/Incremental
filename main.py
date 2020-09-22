@@ -31,7 +31,7 @@ torch.cuda.manual_seed(seed)
 shuffle_idx = shuffle(np.arange(dataset.classes), random_state=args.seed)
 dataset.shuffle_data(shuffle_idx)
 print("Label shuffled")
-print(shuffle_idx)
+# print(shuffle_idx)
 
 myModel = networks.ModelFactory.get_model(args.dataset)
 myModel = torch.nn.DataParallel(myModel).cuda()
@@ -70,8 +70,14 @@ for t in range(tasknum):
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
     flag = 0
-    if (args.trainer == 'ft' or args.trainer == 'ssil') and t==0:
-        name = 'models/trained_model/200729_FT_BIC_Imagenet_ft_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_0.pt'
+#     if (args.trainer == 'ft' or args.trainer == 'ssil') and t==0:
+#         name = 'models/trained_model/200729_FT_BIC_Imagenet_ft_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_0.pt'
+#         state_dict = torch.load(name)
+#         myTrainer.model.load_state_dict(state_dict)
+#         flag = 1
+    
+    if args.trainer == 'ft':
+        name = 'models/trained_model/200919_ft_Hinge_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
         state_dict = torch.load(name)
         myTrainer.model.load_state_dict(state_dict)
         flag = 1
