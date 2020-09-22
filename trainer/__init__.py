@@ -142,10 +142,10 @@ class ResultLogger():
         # statistics
         cp = pred_old.eq(target_old.data.view_as(pred_old)).sum().item()
         epn = (pred_old >= end-self.args.step_size).int().sum().item()
-        epp = (old_samples-(cp + epn)).item()
+        epp = (old_samples-(cp + epn))
         cn = pred_new.eq(target_new.data.view_as(pred_new)).sum().item()
         enp = (pred_new < end-self.args.step_size).int().sum().item()
-        enn = (new_samples-(cn + enp)).item()
+        enn = (new_samples-(cn + enp))
         
         stat['cp'], stat['epp'], stat['epn'], stat['cn'], stat['enn'], stat['enp'] = cp, epp, epn, cn, enn, enp
         
