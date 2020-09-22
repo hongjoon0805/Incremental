@@ -11,17 +11,6 @@ def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
-class NormedLinear(nn.Module):
-
-    def __init__(self, in_features, out_features):
-        super(NormedLinear, self).__init__()
-        self.weight = Parameter(torch.Tensor(in_features, out_features))
-        self.weight.data.uniform_(-1, 1).renorm_(2, 1, 1e-5).mul_(1e5)
-
-    def forward(self, x):
-        out = F.normalize(x, dim=1).mm(F.normalize(self.weight, dim=0))
-        return out
-
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -97,8 +86,8 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[2])
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        #self.fc = nn.Linear(512 * block.expansion, num_classes+4)
-        self.fc = NormedLinear(512 * block.expansion, num_classes+4)
+        self.fc = nn.Linear(512 * block.expansion, num_classes+4)
+        #self.fc = NormedLinear(512 * block.expansion, num_classes+4)
         self.binary_fc = nn.Linear(512 * block.expansion, 1)
 
         for m in self.modules():

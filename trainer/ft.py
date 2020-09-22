@@ -11,10 +11,22 @@ from tqdm import tqdm
 import networks
 import trainer
 
+class NormedLinear(nn.Module):
+
+    def __init__(self, in_features, out_features):
+        super(NormedLinear, self).__init__()
+        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.weight.data.uniform_(-1, 1).renorm_(2, 0, 1e-5).mul_(1e5)
+
+    def forward(self, x):
+        #out = F.normalize(x, dim=1).mm(F.normalize(self.weight, dim=1))
+        out = F.linear(F.normalize(x, dim=1), F.normalize(self.weight, dim=1), 0)
+        return out
+
 class Trainer(trainer.GenericTrainer):
     def __init__(self, IncrementalLoader, model, args):
         super().__init__(IncrementalLoader, model, args)
-        
+        self.model.module.fc = NormedLinear(512, 1004)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         
     def balance_fine_tune(self):
@@ -71,8 +83,8 @@ class Trainer(trainer.GenericTrainer):
                 loss_CE = self.loss(output[:,:end], target)
             
             print("loss",loss_CE)
-+           loss_CE = loss_CE.mean()
-+           print(loss_CE, torch.min(output[:, :end]), torch.max(output[:,:end]))
+            loss_CE = loss_CE.mean()
+            print(loss_CE, torch.min(output[:, :end]), torch.max(output[:,:end]))
             
             self.optimizer.zero_grad()
             (loss_CE).backward()

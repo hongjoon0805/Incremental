@@ -76,8 +76,8 @@ for t in range(tasknum):
 #         myTrainer.model.load_state_dict(state_dict)
 #         flag = 1
     
-    if args.trainer == 'ft':
-        name = 'models/trained_model/200919_ft_Hinge_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
+    if args.trainer == 'eeil':
+        name = 'models/trained_model/EEIL_no_bft_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_task_%d.pt'%(t+1)
         state_dict = torch.load(name)
         myTrainer.model.load_state_dict(state_dict)
         flag = 1
