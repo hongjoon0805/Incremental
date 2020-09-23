@@ -203,9 +203,9 @@ class ResultLogger():
         
         old_class_pred, new_class_pred = pred < mid, pred >= mid
         
-        pred_score = out[pred]
-        pred_softmax = softmax[pred]
-        pred_cos_sim = cos_sim_matrix[pred]
+        pred_score = out[torch.arange(sample_size), pred]
+        pred_softmax = softmax[torch.arange(sample_size), pred]
+        pred_cos_sim = cos_sim_matrix[torch.arange(sample_size), pred]
         
         old_score_avg, new_score_avg = pred_score[old_class_pred].mean(), pred_score[new_class_pred].mean()
         old_softmax_avg, new_softmax_avg = pred_softmax[old_class_pred].mean(), pred_softmax[new_class_pred].mean()

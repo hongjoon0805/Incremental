@@ -70,7 +70,21 @@ for t in range(tasknum):
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
     flag = 0
-    
+#     if args.eval:
+        
+#         if args.date == 'EEIL_normal':
+#             name = 'models/trained_model/EEIL_normal_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_bft_lr_0.01_task_%d.pt'%(t+1)
+            
+#         if args.date == 'FT_BAL':
+#             name = 'models/trained_model/FT_BAL_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_bft_lr_0.01_factor_4_task_%d.pt'%(t+1)
+        
+#         if args.date == 'EEIL_normal_before_bft':
+#             name = 'models/trained_model/EEIL_normal_before_bft_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_task_%d.pt'%(t+1)
+
+
+#         state_dict = torch.load(name)
+#         myTrainer.model.load_state_dict(state_dict)
+#         flag = 1
     if args.trainer == 'gda':
         if t==0:
             name = 'models/trained_model/GDA_Eeuclidean_Imagenet_gda_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_1.pt'
