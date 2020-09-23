@@ -194,12 +194,10 @@ class ResultLogger():
         
         weight = self.model.module.fc.weight
         sample_size = out.shape[0]
-        pred = out.data.max(1, keepdim=True)[1]
+        pred = out[:,:end].data.max(1, keepdim=True)[1]
         normalized_features = features / torch.norm(features, 2, 1).unsqueeze(1)
         normalized_weight = weight / torch.norm(weight, 2, 1).unsqueeze(1)
         cos_sim_matrix = torch.matmul(normalized_features, normalized_weight.transpose(0,1))
-        
-        print(cos_sim_matrix.shape)
         
         softmax = F.softmax(out[:,:end], dim=1)
         
@@ -213,6 +211,7 @@ class ResultLogger():
         old_softmax_avg, new_softmax_avg = pred_softmax[old_class_pred].mean(), pred_softmax[new_class_pred].mean()
         old_cos_sim_avg, new_cos_sim_avg = pred_cos_sim[old_class_pred].mean(), pred_cos_sim[new_class_pred].mean()
         
+        print(old_samples, len(pred))
         epn_mask, enp_mask = pred[:old_samples] >= mid, pred[old_samples:] < mid
         
         epn_score_avg, enp_score_avg = pred_score[:old_samples][epn_mask].mean(), pred_score[old_samples:][enp_mask].mean()
@@ -293,7 +292,7 @@ class ResultLogger():
         self.result['entropy']['old'].append(old_entropy.item())
         self.result['entropy']['new'].append(new_entropy.item())
         
-        pass
+        return
     
     
     def get_task_accuracy(self, start, end, t, iterator):

@@ -21,7 +21,7 @@ class Trainer(trainer.GenericTrainer):
         
         batch_vec = (features.data.unsqueeze(1) - mean.unsqueeze(0))
         temp = torch.matmul(batch_vec, precision)
-        out = -torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3)).squeeze()
+        out = -torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3)).sqrt().squeeze()
         
         return out
     
@@ -46,8 +46,42 @@ class Trainer(trainer.GenericTrainer):
             loss_KD = 0
             
             if tasknum > 0:
-                _, feature_prev = self.model_fixed(data, feature_return=True)
+                out, feature_prev = self.model_fixed(data, feature_return=True)
                 score = self.compute_score(feature_prev, mean, precision)
+                if 'min_max' in self.args.date:
+                    min_val = score.min(dim=1, keepdim=True)[0]
+                    max_val = score.max(dim=1, keepdim=True)[0]
+                    max_min = max_val - min_val
+                    
+                    score = score / (max_min + 1e-11)
+                
+#                 print('Euclidean normal score')
+#                 print(score_normal[:5])
+                
+#                 print('Euclidean sqrt score')
+#                 print(score_sqrt[:5])
+                
+#                 print('Euclidean normal softmax')
+#                 print(F.softmax(score_normal[:5] / T, dim=1))
+                
+#                 print('Euclidean normal softmax min & max')
+#                 print(F.softmax(score_normal[:5] / T, dim=1).min(dim=1))
+#                 print(F.softmax(score_normal[:5] / T, dim=1).max(dim=1))
+                
+#                 print('Euclidean sqrt softmax')
+#                 print(F.softmax(score_sqrt[:5] / T, dim=1))
+                
+#                 print('Euclidean sqrt softmax min & max')
+#                 print(F.softmax(score_sqrt[:5] / T, dim=1).min(dim=1))
+#                 print(F.softmax(score_sqrt[:5] / T, dim=1).max(dim=1))
+                
+#                 print('FC score')
+#                 print(out[:5,:100])
+                
+#                 print('FC softmax')
+#                 print(F.softmax(out[:5,:100] / T, dim=1))
+                
+#                 print(woifdfngdklfj)
 
                 soft_target = F.softmax(score / T, dim=1)
                 output_log = F.log_softmax(output[:,:mid] / T, dim=1)

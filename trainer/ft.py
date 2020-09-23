@@ -11,22 +11,23 @@ from tqdm import tqdm
 import networks
 import trainer
 
-class NormedLinear(nn.Module):
+class NormedLinear(torch.nn.Module):
 
     def __init__(self, in_features, out_features):
         super(NormedLinear, self).__init__()
-        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.weight = torch.nn.Parameter(torch.Tensor(out_features, in_features))
         self.weight.data.uniform_(-1, 1).renorm_(2, 0, 1e-5).mul_(1e5)
 
     def forward(self, x):
         #out = F.normalize(x, dim=1).mm(F.normalize(self.weight, dim=1))
-        out = F.linear(F.normalize(x, dim=1), F.normalize(self.weight, dim=1), 0)
+        out = F.linear(F.normalize(x, dim=1), F.normalize(self.weight, dim=1))
         return out
 
 class Trainer(trainer.GenericTrainer):
     def __init__(self, IncrementalLoader, model, args):
         super().__init__(IncrementalLoader, model, args)
-        self.model.module.fc = NormedLinear(512, 1004)
+        if 'Hinge' in self.args.date:
+            self.model.module.fc = NormedLinear(512, 1004).cuda()
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         
     def balance_fine_tune(self):
@@ -53,7 +54,7 @@ class Trainer(trainer.GenericTrainer):
             
             #self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
             #self.loss = trainer.LDAMLoss(cls_num_list)
-            self.loss = torch.nn.MultiMarginloss(reduction='none')
+            self.loss = torch.nn.MultiMarginLoss(reduction='none')
         
         #if self.incremental_loader.t == 0:
             #self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
@@ -82,9 +83,9 @@ class Trainer(trainer.GenericTrainer):
             else:
                 loss_CE = self.loss(output[:,:end], target)
             
-            print("loss",loss_CE)
-            loss_CE = loss_CE.mean()
-            print(loss_CE, torch.min(output[:, :end]), torch.max(output[:,:end]))
+#             print("loss",loss_CE)
+#             loss_CE = loss_CE.mean()
+#             print(loss_CE, torch.min(output[:, :end]), torch.max(output[:,:end]))
             
             self.optimizer.zero_grad()
             (loss_CE).backward()

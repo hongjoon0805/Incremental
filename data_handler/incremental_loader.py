@@ -181,6 +181,7 @@ class IncrementalLoader(td.Dataset):
             index = self.tr_idx[index]
         if self.mode == 'evaluate':
             index = self.eval_idx[index]
+            transform = self.dataset.test_transform
         elif self.mode == 'bias': # for bic bias correction
             index = self.validation_buffer[index]
         elif self.mode == 'b-ft':
