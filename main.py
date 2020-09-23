@@ -70,35 +70,6 @@ for t in range(tasknum):
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
     flag = 0
-    if args.eval:
-        if 'LDAM_soft_Task_1_CE' in args.date:
-            name = 'models/trained_model/LDAM_soft_Task_1_CE_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
-        if 'LDAM_soft_all' in args.date:
-            name = 'models/trained_model/LDAM_soft_all_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
-#         if 'LDAM_Hinge' in args.date:
-#             name = 'models/trained_model/LDAM_Hinge_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
-#         if 'Hinge_lr_0.005' in args.date:
-#             name = 'models/trained_model/Hinge_lr_0.005_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
-        if 'EEIL_no_bft' in args.date:
-            name = 'models/trained_model/EEIL_no_bft_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_task_%d.pt'%(t+1)
-        if 'GDA_Eeuclidean' in args.date:
-            name = 'models/trained_model/GDA_Eeuclidean_Imagenet_gda_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_%d.pt'%(t+1)
-        if 'EEIL_normal' in args.date:
-            name = 'models/trained_model/20200921EEIL_bft_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_bft_lr_0.01_before_bft_task_%d.pt'%(t+1)
-        if 'EEIL_normal_before_bft' in args.date:
-            if t==0:
-                name = 'models/trained_model/20200921EEIL_bft_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_bft_lr_0.01_task_1.pt'
-            elif t>0:
-                name = 'models/trained_model/20200921EEIL_bft_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_bft_lr_0.01_before_bft_task_%d.pt'%(t)
-        if 'FT_BAL' in args.date:
-            name = 'models/trained_model/_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_bft_lr_0.01_factor_4_task_%d.pt'%(t+1)
-        if 'EEIL_low_bft_lr' in args.date:
-            name = 'models/trained_model/200821_EEIL_30_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_task_%d.pt'%(t)
-        
-        state_dict = torch.load(name)
-        myTrainer.model.load_state_dict(state_dict)
-        flag = 1
-        
     
     if args.trainer == 'gda':
         if t==0:
@@ -156,8 +127,8 @@ for t in range(tasknum):
     if t > 0 and 'bic' in args.trainer:
         myTrainer.train_bias_correction()
             
-#     logger.evaluate(mode='train', get_results = False)
-#     logger.evaluate(mode='test', get_results = True)
+    logger.evaluate(mode='train', get_results = False)
+    logger.evaluate(mode='test', get_results = True)
     
     start = 0
     end = args.base_classes
@@ -165,13 +136,13 @@ for t in range(tasknum):
     result_loader.reset()
     kwargs = {'num_workers': args.workers, 'pin_memory': True}
     iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
-#     for i in range(t+1):
-#         logger.get_task_accuracy(start, end, t, iterator)
+    for i in range(t+1):
+        logger.get_task_accuracy(start, end, t, iterator)
         
-#         start = end
-#         end += args.step_size
+        start = end
+        end += args.step_size
         
-#         result_loader.task_change()
+        result_loader.task_change()
     
     myTrainer.increment_classes()
     logger.save_results()
