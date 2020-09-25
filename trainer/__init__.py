@@ -194,7 +194,7 @@ class ResultLogger():
         
         weight = self.model.module.fc.weight
         sample_size = out.shape[0]
-        pred = out[:,:end].data.max(1, keepdim=True)[1]
+        pred = out[:,:end].data.max(1)[1]
         normalized_features = features / torch.norm(features, 2, 1).unsqueeze(1)
         normalized_weight = weight / torch.norm(weight, 2, 1).unsqueeze(1)
         cos_sim_matrix = torch.matmul(normalized_features, normalized_weight.transpose(0,1))

@@ -17,11 +17,14 @@ class Trainer(trainer.GenericTrainer):
         super().__init__(IncrementalLoader, model, args)
         self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         
-    def compute_score(self, features, mean, precision):
+    def compute_score(self, features, mean, precision, sqrt = False):
         
         batch_vec = (features.data.unsqueeze(1) - mean.unsqueeze(0))
         temp = torch.matmul(batch_vec, precision)
-        out = -torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3)).sqrt().squeeze()
+        if sqrt:
+            out = -torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3)).sqrt().squeeze()
+        else:
+            out = -torch.matmul(temp.unsqueeze(2),batch_vec.unsqueeze(3)).squeeze()
         
         return out
     
@@ -47,7 +50,8 @@ class Trainer(trainer.GenericTrainer):
             
             if tasknum > 0:
                 out, feature_prev = self.model_fixed(data, feature_return=True)
-                score = self.compute_score(feature_prev, mean, precision)
+                score_normal = self.compute_score(feature_prev, mean, precision)
+                score_sqrt = self.compute_score(feature_prev, mean, precision, sqrt = True)
                 if 'min_max' in self.args.date:
                     min_val = score.min(dim=1, keepdim=True)[0]
                     max_val = score.max(dim=1, keepdim=True)[0]
@@ -55,31 +59,32 @@ class Trainer(trainer.GenericTrainer):
                     
                     score = score / (max_min + 1e-11)
                 
+#                 sample_num = 1
 #                 print('Euclidean normal score')
-#                 print(score_normal[:5])
+#                 print(score_normal[:sample_num])
                 
 #                 print('Euclidean sqrt score')
-#                 print(score_sqrt[:5])
+#                 print(score_sqrt[:sample_num])
                 
 #                 print('Euclidean normal softmax')
-#                 print(F.softmax(score_normal[:5] / T, dim=1))
+#                 print(F.softmax(score_normal[:sample_num] / T, dim=1))
                 
 #                 print('Euclidean normal softmax min & max')
-#                 print(F.softmax(score_normal[:5] / T, dim=1).min(dim=1))
-#                 print(F.softmax(score_normal[:5] / T, dim=1).max(dim=1))
+#                 print(F.softmax(score_normal[:sample_num] / T, dim=1).min(dim=1))
+#                 print(F.softmax(score_normal[:sample_num] / T, dim=1).max(dim=1))
                 
 #                 print('Euclidean sqrt softmax')
-#                 print(F.softmax(score_sqrt[:5] / T, dim=1))
+#                 print(F.softmax(score_sqrt[:sample_num] / T, dim=1))
                 
 #                 print('Euclidean sqrt softmax min & max')
-#                 print(F.softmax(score_sqrt[:5] / T, dim=1).min(dim=1))
-#                 print(F.softmax(score_sqrt[:5] / T, dim=1).max(dim=1))
+#                 print(F.softmax(score_sqrt[:sample_num] / T, dim=1).min(dim=1))
+#                 print(F.softmax(score_sqrt[:sample_num] / T, dim=1).max(dim=1))
                 
 #                 print('FC score')
-#                 print(out[:5,:100])
+#                 print(out[:sample_num,:100])
                 
 #                 print('FC softmax')
-#                 print(F.softmax(out[:5,:100] / T, dim=1))
+#                 print(F.softmax(out[:sample_num,:100] / T, dim=1))
                 
 #                 print(woifdfngdklfj)
 

@@ -53,23 +53,32 @@ class Trainer(trainer.GenericTrainer):
             if tasknum > 0:
                 score = self.model_fixed(data).data
                 
-                if bft is False:
-                    loss_KD = torch.zeros(tasknum).cuda()
-                    for t in range(tasknum):
+                # bic의 end_KD = mid = start
+                # bic의 start_KD = end_KD - stepsize
+                
+                score = score[:,:start].data
+                
+                soft_target = F.softmax(score / T, dim=1)
+                output_log = F.log_softmax(output[:,:start] / T, dim=1)
+                loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+                
+#                 if bft is False:
+#                     loss_KD = torch.zeros(tasknum).cuda()
+#                     for t in range(tasknum):
 
-                        # local distillation
-                        start_KD = (t) * self.args.step_size
-                        end_KD = (t+1) * self.args.step_size
+#                         # local distillation
+#                         start_KD = (t) * self.args.step_size
+#                         end_KD = (t+1) * self.args.step_size
 
-                        soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
-                        output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
-                        loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
-                    loss_KD = loss_KD.sum()
-                else:
-#                     score = self.model(data).data # 제발 대단하길
-                    soft_target = F.softmax(score[:,start:end] / T, dim=1)
-                    output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-                    loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+#                         soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
+#                         output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
+#                         loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+#                     loss_KD = loss_KD.sum()
+#                 else:
+# #                     score = self.model(data).data # 제발 대단하길
+#                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
+#                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
+#                     loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                 
                 
             self.optimizer.zero_grad()
