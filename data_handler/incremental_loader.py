@@ -63,7 +63,6 @@ class IncrementalLoader(td.Dataset):
         
         self.train_start_idx = np.argmin(self.dataset.train_labels<self.start) # start data index
         self.train_end_idx = np.argmax(self.dataset.train_labels>(self.end-1)) # end data index
-        self.test_start_idx = np.argmin(self.dataset.train_labels<self.start) # start data index
         self.test_end_idx = np.argmax(self.dataset.test_labels>(self.end-1)) # end data index
         
         if self.train_end_idx == 0:
@@ -181,7 +180,7 @@ class IncrementalLoader(td.Dataset):
             index = self.tr_idx[index]
         if self.mode == 'evaluate':
             index = self.eval_idx[index]
-            transform = self.dataset.test_transform
+#             transform = self.dataset.test_transform
         elif self.mode == 'bias': # for bic bias correction
             index = self.validation_buffer[index]
         elif self.mode == 'b-ft':
@@ -247,6 +246,7 @@ class ResultLoader(td.Dataset):
         self.test_idx = range(self.start_idx, self.end_idx)
             
     def __getitem__(self, index):
+        index = self.test_idx[index]
         img = self.data[index]
         try:
             img = Image.fromarray(img)

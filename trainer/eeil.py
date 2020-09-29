@@ -56,13 +56,15 @@ class Trainer(trainer.GenericTrainer):
                 # bic의 end_KD = mid = start
                 # bic의 start_KD = end_KD - stepsize
                 
-                score = score[:,:start].data
                 
-                soft_target = F.softmax(score / T, dim=1)
-                output_log = F.log_softmax(output[:,:start] / T, dim=1)
-                loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+                if bft is False:
+                    
+                    score = score[:,:start].data
                 
-#                 if bft is False:
+                    soft_target = F.softmax(score / T, dim=1)
+                    output_log = F.log_softmax(output[:,:start] / T, dim=1)
+                    loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+                    
 #                     loss_KD = torch.zeros(tasknum).cuda()
 #                     for t in range(tasknum):
 
@@ -74,11 +76,10 @@ class Trainer(trainer.GenericTrainer):
 #                         output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
 #                         loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
 #                     loss_KD = loss_KD.sum()
-#                 else:
-# #                     score = self.model(data).data # 제발 대단하길
-#                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
-#                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
-#                     loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+                else:
+                    soft_target = F.softmax(score[:,start:end] / T, dim=1)
+                    output_log = F.log_softmax(output[:,start:end] / T, dim=1)
+                    loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                 
                 
             self.optimizer.zero_grad()
