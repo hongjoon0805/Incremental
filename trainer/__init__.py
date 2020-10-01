@@ -19,7 +19,8 @@ class ResultLogger():
         self.incremental_loader = incremental_loader
         self.args = args
         self.kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.option = 'Euclidean'
+#         self.option = 'Euclidean'
+        self.option = 'Mahalanobis'
         self.result = {}
         
         # For IL2M
@@ -33,6 +34,8 @@ class ResultLogger():
         t = self.incremental_loader.t
         if mode == 'train':
             self.incremental_loader.mode = 'evaluate'
+            if self.args.trainer == 'full':
+                self.incremental_loader.mode = 'full'
             iterator = torch.utils.data.DataLoader(self.incremental_loader,
                                                    batch_size=self.args.batch_size, shuffle=True, **self.kwargs)
             
@@ -332,7 +335,9 @@ class ResultLogger():
             totalFeatures = torch.zeros((classes, 1)).cuda()
             total = 0
             
-            self.incremental_loader.mode = 'evaluate'
+#             self.incremental_loader.mode = 'evaluate'
+#             self.incremental_loader.mode = 'moment'
+            self.incremental_loader.mode = 'full'
             iterator = torch.utils.data.DataLoader(self.incremental_loader,
                                                    batch_size=self.args.batch_size, shuffle=True, **self.kwargs)
             for data, target in tqdm(iterator):
@@ -365,7 +370,8 @@ class ResultLogger():
                     covariance += cov
 
                 #avoid singular matrix
-                covariance = covariance / totalFeatures.sum() + torch.eye(512).cuda() * 1e-9
+#                 covariance = covariance / totalFeatures.sum() + torch.eye(512).cuda() * 1e-9
+                covariance = (covariance / totalFeatures.sum()) * torch.eye(512).cuda()
                 precision = covariance.inverse()
 
             self.class_means = class_means

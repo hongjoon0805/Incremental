@@ -30,7 +30,8 @@ class Trainer(trainer.GenericTrainer):
     
     def train(self, epoch, mean = None, precision = None):
         
-        T=8
+        T=2
+        print('T: ', T)
         
         self.model.train()
         print("Epochs %d"%epoch)
@@ -50,8 +51,7 @@ class Trainer(trainer.GenericTrainer):
             
             if tasknum > 0:
                 out, feature_prev = self.model_fixed(data, feature_return=True)
-#                 score_normal = self.compute_score(feature_prev, mean, precision)
-                score = self.compute_score(feature_prev, mean, precision, sqrt = True)
+                score = self.compute_score(feature_prev, mean, precision, sqrt = True) * self.args.eta
                 if 'min_max' in self.args.date:
                     min_val = score.min(dim=1, keepdim=True)[0]
                     max_val = score.max(dim=1, keepdim=True)[0]
@@ -59,45 +59,33 @@ class Trainer(trainer.GenericTrainer):
                     
                     score = score / (max_min + 1e-11)
                 
-                sample_num = 3
+#                 sample_num = 20
                 
-                print('Euclidean sqrt score')
-                print(score[:sample_num])
+#                 print('Euclidean sqrt entropy')
+#                 log_prob = F.log_softmax(score[:sample_num] / T, dim=1)
+#                 prob = F.softmax(score[:sample_num] / T, dim=1)
+#                 entropy = (-log_prob * prob).sum(dim=1)
+#                 print(entropy)
                 
-                print('Euclidean sqrt softmax')
-                print(F.softmax(score[:sample_num] / T, dim=1))
+#                 print('Euclidean sqrt softmax min & max')
+#                 print(F.softmax(score[:sample_num] / T, dim=1).min(dim=1))
+#                 print(F.softmax(score[:sample_num] / T, dim=1).max(dim=1))
                 
-                print('Euclidean sqrt entropy')
-                log_prob = F.log_softmax(score[:sample_num] / T, dim=1)
-                prob = F.softmax(score[:sample_num] / T, dim=1)
-                entropy = (-log_prob * prob).sum(dim=1)
-                print(entropy)
+#                 print('FC entropy')
+#                 log_prob = F.log_softmax(out[:sample_num, :100] / T, dim=1)
+#                 prob = F.softmax(out[:sample_num, :100] / T, dim=1)
+#                 entropy = (-log_prob * prob).sum(dim=1)
+#                 print(entropy)
                 
-                print('Euclidean sqrt softmax min & max')
-                print(F.softmax(score[:sample_num] / T, dim=1).min(dim=1))
-                print(F.softmax(score[:sample_num] / T, dim=1).max(dim=1))
+#                 print('FC softmax min & max')
+#                 print(F.softmax(out[:sample_num, :100] / T, dim=1).min(dim=1))
+#                 print(F.softmax(out[:sample_num, :100] / T, dim=1).max(dim=1))
                 
-                print('FC score')
-                print(out[:sample_num, :100])
-                
-                print('FC softmax')
-                print(F.softmax(out[:sample_num,:100] / T, dim=1))
-                
-                print('FC entropy')
-                log_prob = F.log_softmax(out[:sample_num, :100] / T, dim=1)
-                prob = F.softmax(out[:sample_num, :100] / T, dim=1)
-                entropy = (-log_prob * prob).sum(dim=1)
-                print(entropy)
-                
-                print('FC softmax min & max')
-                print(F.softmax(out[:sample_num, :100] / T, dim=1).min(dim=1))
-                print(F.softmax(out[:sample_num, :100] / T, dim=1).max(dim=1))
-                
-                print(woifdfngdklfj)
+#                 print(woifdfngdklfj)
 
                 soft_target = F.softmax(score / T, dim=1)
                 output_log = F.log_softmax(output[:,:mid] / T, dim=1)
-                loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+                loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                         
             self.optimizer.zero_grad()
             (lamb * loss_KD + (1-lamb) * loss_CE).backward()

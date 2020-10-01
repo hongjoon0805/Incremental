@@ -34,6 +34,7 @@ class IncrementalLoader(td.Dataset):
         
         self.tr_idx = range(self.train_end_idx)
         self.eval_idx = range(self.train_end_idx)
+        self.moment_idx = range(self.train_end_idx)
         
         self.memory_buffer = []
         self.exemplar = []
@@ -83,6 +84,7 @@ class IncrementalLoader(td.Dataset):
                 self.tr_idx += range(start, end-val_per_class)
         
         self.eval_idx = list(self.tr_idx) + self.exemplar
+        self.moment_idx = list(self.tr_idx) + self.exemplar * 10
         if self.args.trainer != 'ssil' and self.args.trainer != 'lwf':
             self.tr_idx = list(self.tr_idx) + self.exemplar
             
@@ -163,6 +165,8 @@ class IncrementalLoader(td.Dataset):
             return len(self.tr_idx)
         elif self.mode == 'evaluate':
             return len(self.eval_idx)
+        elif self.mode == 'moment':
+            return len(self.moment_idx)
         elif self.mode == 'bias':
             return len(self.validation_buffer)
         elif self.mode == 'b-ft':
@@ -180,7 +184,8 @@ class IncrementalLoader(td.Dataset):
             index = self.tr_idx[index]
         if self.mode == 'evaluate':
             index = self.eval_idx[index]
-#             transform = self.dataset.test_transform
+        elif self.mode == 'moment':
+            index = self.moment_idx[index]
         elif self.mode == 'bias': # for bic bias correction
             index = self.validation_buffer[index]
         elif self.mode == 'b-ft':

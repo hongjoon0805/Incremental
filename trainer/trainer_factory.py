@@ -19,10 +19,12 @@ class TrainerFactory():
             import trainer.lwf as trainer
         elif args.trainer == 'ssil':
             import trainer.ssil as trainer
-        elif args.trainer == 'ft' or args.trainer == 'il2m':
+        elif args.trainer == 'ft' or args.trainer == 'il2m' or args.trainer == 'ft_nem':
             import trainer.ft as trainer
         elif args.trainer == 'icarl':
             import trainer.icarl as trainer
+        elif args.trainer == 'full':
+            import trainer.full as trainer
         elif args.trainer == 'bic':
             import trainer.bic as trainer
         elif args.trainer == 'wa':

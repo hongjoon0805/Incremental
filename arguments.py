@@ -21,6 +21,7 @@ def get_args():
                         help='Seeds values to be used; seed introduces randomness by changing order of classes')
     parser.add_argument('--decay', type=float, default=0.0001, help='Weight decay (L2 penalty).')
     parser.add_argument('--step-size', type=int, default=100, help='How many classes to add in each increment')
+    parser.add_argument('--eta', type=float, default=0.125, help='Euclidean scale factor')
     parser.add_argument('--memory-budget', type=int, default=20000,
                         help='How many images can we store at max. 0 will result in fine-tuning')
     parser.add_argument('--nepochs', type=int, default=100, help='Number of epochs for each increment')
@@ -56,9 +57,9 @@ def get_args():
                                  'icarl', 
                                  'il2m', 
                                  'bic', 
-                                 'er_NMC', 
-                                 'coreset_NMC',
                                  'wa',
+                                 'full',
+                                 'ft_nem',
                                  'ft_wa',
                                  'ft_bic_focal',
                                  'eeil',
