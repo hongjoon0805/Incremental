@@ -46,25 +46,14 @@ def get_args():
                                  'naive',], 
                         help='(default=%(default)s)')
     
-    parser.add_argument('--bft', action='store_true', default=False, help='Use Balanced fine-tuning')
-    
     parser.add_argument('--trainer', default='', type=str, required=True,
                         choices=['lwf', 
                                  'ssil', 
                                  'ft',
-                                 'ft_bic',
                                  'icarl', 
                                  'il2m', 
                                  'bic', 
-                                 'er_NMC', 
-                                 'coreset_NMC',
-                                 'wa',
-                                 'ft_wa',
-                                 'ft_bic_focal',
-                                 'eeil',
-                                 'FCft', 
-                                 'gda',
-                                 'ft_lsm'], 
+                                 'eeil',], 
                         help='(default=%(default)s)')
     parser.add_argument('--distill', default='None', type=str, required=False,
                         choices=['kd', 

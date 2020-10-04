@@ -19,7 +19,7 @@ class Trainer(trainer.GenericTrainer):
     
     def balance_fine_tune(self):
         self.update_frozen_model()
-        self.setup_training(self.args.bft_lr)
+        self.setup_training(self.args.lr / 10)
         
         self.incremental_loader.update_bft_buffer()
         self.incremental_loader.mode = 'b-ft'
@@ -41,6 +41,7 @@ class Trainer(trainer.GenericTrainer):
         end = self.incremental_loader.end
         start = end-self.args.step_size
         
+        self.incremental_loader.mode == 'trian'
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             try:
@@ -66,7 +67,6 @@ class Trainer(trainer.GenericTrainer):
                         loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                     loss_KD = loss_KD.sum()
                 else:
-#                     score = self.model(data).data # 제발 대단하길
                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)
                     loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)

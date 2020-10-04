@@ -7,6 +7,7 @@ from numpy.linalg import inv
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
 import pickle
+import pickle
 
 
 class ResultLogger():
@@ -194,7 +195,7 @@ class ResultLogger():
         
         weight = self.model.module.fc.weight
         sample_size = out.shape[0]
-        pred = out[:,:end].data.max(1, keepdim=True)[1]
+        pred = out[:,:end].data.max(1)[1]
         normalized_features = features / torch.norm(features, 2, 1).unsqueeze(1)
         normalized_weight = weight / torch.norm(weight, 2, 1).unsqueeze(1)
         cos_sim_matrix = torch.matmul(normalized_features, normalized_weight.transpose(0,1))
@@ -211,7 +212,6 @@ class ResultLogger():
         old_softmax_avg, new_softmax_avg = pred_softmax[old_class_pred].mean(), pred_softmax[new_class_pred].mean()
         old_cos_sim_avg, new_cos_sim_avg = pred_cos_sim[old_class_pred].mean(), pred_cos_sim[new_class_pred].mean()
         
-        print(old_samples, len(pred))
         epn_mask, enp_mask = pred[:old_samples] >= mid, pred[old_samples:] < mid
         
         epn_score_avg, enp_score_avg = pred_score[:old_samples][epn_mask].mean(), pred_score[old_samples:][enp_mask].mean()
@@ -418,20 +418,12 @@ class ResultLogger():
             self.args.nepochs,
         )
 
-        if self.args.distill != 'None':
-            self.log_name += '_distill_{}'.format(self.args.distill)
-        
-        if self.args.bft:
-            self.log_name += '_bft_lr_{}'.format(self.args.bft_lr)
         
         if self.args.trainer == 'ssil':
             self.log_name += '_replay_{}'.format(self.args.replay_batch_size)
             
         if self.args.trainer == 'ssil' or 'ft' in  self.args.trainer or self.args.trainer == 'il2m':
             self.log_name += '_factor_{}'.format(self.args.factor)
-            
-        if self.args.prev_new:
-            self.log_name += '_prev_new'
             
     def print_result(self, mode, t):
         print(mode + " top-1: %0.2f"%self.result[mode + '-top-1'][t])
@@ -447,6 +439,12 @@ class ResultLogger():
         
     def save_model(self, add_name = ''):
         t = self.incremental_loader.t
+        if t==0:
+            name = 'models/trained_model/{}_step_{}_nepochs_{}_{}_task_0.pt'.format(self.args.dataset, 
+                                                                                    self.args.base_classes, 
+                                                                                    self.args.nepochs,
+                                                                                    self.args.trainer)
+            torch.save(self.model.state_dict(), name)
         torch.save(self.model.state_dict(), './models/trained_model/' + self.log_name + add_name + '_task_{}.pt'.format(t))
         if 'bic' in self.args.trainer:
             torch.save(self.trainer.bias_correction_layer.state_dict(), 

@@ -5,6 +5,7 @@ import torch.utils.data as td
 import numpy as np
 import scipy.io as sio
 import copy
+import utils
 
 import data_handler
 import networks
@@ -62,40 +63,19 @@ for t in range(tasknum):
     # Add new classes to the train, and test iterator
     lr = args.lr
     if args.trainer == 'ssil' or 'ft' in  args.trainer:
-        lr = args.lr / (t+1)
+        if 'ft' in args.trainer:
+            lr = args.lr / (t+1)
         if t==1:
             total_epochs = args.nepochs // args.factor
             schedule = schedule //  args.factor
     
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
-    flag = 0
-#     if args.eval:
-        
-#         if args.date == 'EEIL_normal':
-#             name = 'models/trained_model/EEIL_normal_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_bft_lr_0.01_task_%d.pt'%(t+1)
-            
-#         if args.date == 'FT_BAL':
-#             name = 'models/trained_model/FT_BAL_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_bft_lr_0.01_factor_4_task_%d.pt'%(t+1)
-        
-#         if args.date == 'EEIL_normal_before_bft':
-#             name = 'models/trained_model/EEIL_normal_before_bft_Imagenet_eeil_0_memsz_20000_base_100_step_100_batch_128_epoch_40_task_%d.pt'%(t+1)
-
-
-#         state_dict = torch.load(name)
-#         myTrainer.model.load_state_dict(state_dict)
-#         flag = 1
-    if args.trainer == 'gda':
-        if t==0:
-            name = 'models/trained_model/GDA_Eeuclidean_Imagenet_gda_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_1.pt'
-            state_dict = torch.load(name)
-            myTrainer.model.load_state_dict(state_dict)
-            flag = 1
+    
+    flag = utils.load_models(args, myTrainer.model, t)
         
     # Running nepochs epochs
-    if t>0 and args.trainer == 'gda':
-        mean = copy.deepcopy(logger.class_means)
-        precision = copy.deepcopy(logger.precision)
+    
     for epoch in range(0, total_epochs):
         if flag == 1:
             print('Evaluation!')
@@ -105,20 +85,16 @@ for t in range(tasknum):
             break
         else:
             incremental_loader.mode = 'train'
-            if args.trainer == 'gda' and t>0:
-                myTrainer.train(epoch, mean, precision)
-                
-            else:
-                myTrainer.train(epoch)
+            myTrainer.train(epoch)
             
         if epoch % 10 == (10 - 1) and args.debug:
-            if args.trainer == 'icarl' or 'nem' in args.trainer or args.trainer == 'gda':
+            if args.trainer == 'icarl' or 'nem' in args.trainer:
                 logger.update_moment()
             logger.evaluate(mode='train', get_results = False)
             logger.evaluate(mode='test', get_results = False)
     
     # iCaRL prototype update
-    if args.trainer == 'icarl' or 'nem' in args.trainer or args.trainer == 'gda':
+    if args.trainer == 'icarl' or 'nem' in args.trainer:
         logger.update_moment()
         print('Moment update finished')
     
@@ -127,13 +103,9 @@ for t in range(tasknum):
         logger.update_mean()
         print('Mean update finished')
     
-    # WA weight align
-    if t > 0 and 'wa' in args.trainer:
-        myTrainer.weight_align()   
-    
     # EEIL balanced fine-tuning
-    if t > 0 and args.bft and flag == 0:
-        logger.save_model(add_name = '_before_bft')
+    if t > 0 and args.trainer == 'eeil' and flag == 0:
+#         logger.save_model(add_name = '_before_bft')
         myTrainer.balance_fine_tune()
         
     
@@ -158,6 +130,7 @@ for t in range(tasknum):
         
         result_loader.task_change()
     
-    myTrainer.increment_classes()
     logger.save_results()
-    logger.save_model()
+    if args.trainer != 'il2m':
+        logger.save_model()
+    myTrainer.increment_classes()

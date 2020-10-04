@@ -31,6 +31,7 @@ class Trainer(GenericTrainer):
         end = self.incremental_loader.end
         start = end-self.args.step_size
         
+        self.incremental_loader.mode == 'trian'
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             

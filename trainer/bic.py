@@ -74,6 +74,7 @@ class Trainer(trainer.GenericTrainer):
         start = 0
         lamb = mid / end
         
+        self.incremental_loader.mode == 'trian'
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
 

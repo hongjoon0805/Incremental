@@ -48,18 +48,7 @@ class Trainer(trainer.GenericTrainer):
         end = self.incremental_loader.end
         mid = end - self.args.step_size
         
-        if 'Hinge' in self.args.date:
-            cls_num_list = np.ones(end)
-            cls_num_list = self.incremental_loader.get_cls_num_list()
-            
-            #self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
-            #self.loss = trainer.LDAMLoss(cls_num_list)
-            self.loss = torch.nn.MultiMarginLoss(reduction='none')
-        
-        #if self.incremental_loader.t == 0:
-            #self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
-
-        
+        self.incremental_loader.mode == 'trian'
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             

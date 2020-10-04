@@ -247,6 +247,7 @@ class ResultLoader(td.Dataset):
         self.test_idx = range(self.start_idx, self.end_idx)
             
     def __getitem__(self, index):
+        index = self.test_idx[index]
         img = self.data[index]
         try:
             img = Image.fromarray(img)

@@ -24,6 +24,7 @@ class Trainer(trainer.GenericTrainer):
         
         self.model.train()
         print("Epochs %d"%epoch)
+        T=2
         
         tasknum = self.incremental_loader.t
         end = self.incremental_loader.end
@@ -39,7 +40,9 @@ class Trainer(trainer.GenericTrainer):
             iterator = zip(self.train_iterator, exemplar_iterator)
         else:
             iterator = self.train_iterator
-            
+        
+        
+        self.incremental_loader.mode == 'trian'
         for samples in tqdm(iterator):
             if tasknum > 0:
                 curr, prev = samples
@@ -62,6 +65,7 @@ class Trainer(trainer.GenericTrainer):
                 batch_size = data.shape[0]
             
             output = self.model(data)
+            loss_KD = 0
             
             if self.args.ablation == 'naive':
                 target = torch.cat((target, target_r))
@@ -79,10 +83,16 @@ class Trainer(trainer.GenericTrainer):
                     prev = output[batch_size:batch_size+replay_size,start:mid]
                     loss_CE_prev = self.loss(prev, target_r)
                     loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size)
+                    
+                    # loss_KD
+                    score = self.model_fixed(data)[:,:mid].data
+                    soft_target = F.softmax(score / T, dim=1)
+                    output_log = F.log_softmax(output[:,:mid] / T, dim=1)
+                    loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T ** 2)
 
                 else:
                     loss_CE = loss_CE_curr / batch_size
                 
             self.optimizer.zero_grad()
-            (loss_CE).backward()
+            (loss_KD + loss_CE).backward()
             self.optimizer.step()
