@@ -53,7 +53,7 @@ class Trainer(trainer.GenericTrainer):
             cls_num_list = self.incremental_loader.get_cls_num_list()
             
             #self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
-            self.loss = trainer.LDAMLoss(cls_num_list, s=1, max_m=2.0)
+            self.loss = trainer.LDAMLoss(cls_num_list, s=1, max_m=self.args.margin)
             #self.loss = torch.nn.MultiMarginLoss(reduction='none')
         
         #if self.incremental_loader.t == 0:
