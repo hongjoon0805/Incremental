@@ -62,8 +62,8 @@ for t in range(tasknum):
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
     # Add new classes to the train, and test iterator
     lr = args.lr
-    if args.trainer == 'ssil' or 'ft' in  args.trainer or args.trainer == 'gda':
-        if args.trainer == 'ssil' or 'ft' in  args.trainer:
+    if args.trainer == 'ssil' or 'ft' in  args.trainer:
+        if 'ft' in  args.trainer:
             lr = args.lr / (t+1)
         if t==1:
             total_epochs = args.nepochs // args.factor
@@ -117,6 +117,8 @@ for t in range(tasknum):
         if flag == 1:
             print('Evaluation!')
             break
+        if args.trainer == 'gda' and t==1:
+            break
         myTrainer.update_lr(epoch, schedule)
         if args.trainer == 'il2m':
             break
@@ -158,22 +160,22 @@ for t in range(tasknum):
     if t > 0 and 'bic' in args.trainer:
         myTrainer.train_bias_correction()
             
-    logger.evaluate(mode='train', get_results = False)
-    logger.evaluate(mode='test', get_results = True)
+#     logger.evaluate(mode='train', get_results = False)
+#     logger.evaluate(mode='test', get_results = True)
     
-    start = 0
-    end = args.base_classes
+#     start = 0
+#     end = args.base_classes
     
-    result_loader.reset()
-    kwargs = {'num_workers': args.workers, 'pin_memory': True}
-    iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
-    for i in range(t+1):
-        logger.get_task_accuracy(start, end, t, iterator)
+#     result_loader.reset()
+#     kwargs = {'num_workers': args.workers, 'pin_memory': True}
+#     iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
+#     for i in range(t+1):
+#         logger.get_task_accuracy(start, end, t, iterator)
         
-        start = end
-        end += args.step_size
+#         start = end
+#         end += args.step_size
         
-        result_loader.task_change()
+#         result_loader.task_change()
     
     myTrainer.increment_classes()
     logger.save_results()

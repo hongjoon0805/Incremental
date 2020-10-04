@@ -38,7 +38,7 @@ class Trainer(trainer.GenericTrainer):
         
         tasknum = self.incremental_loader.t
         end = self.incremental_loader.end
-        incremental_loader.mode = 'full'
+        self.incremental_loader.mode = 'full'
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             

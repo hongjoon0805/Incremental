@@ -335,12 +335,14 @@ class ResultLogger():
             totalFeatures = torch.zeros((classes, 1)).cuda()
             total = 0
             
-#             self.incremental_loader.mode = 'evaluate'
-#             self.incremental_loader.mode = 'moment'
-            self.incremental_loader.mode = 'full'
+            self.incremental_loader.mode = 'full' if 'Full' in self.args.date else 'evaluate'
+            self.incremental_loader.mode = 'CutMix' if 'CutMix' in self.args.date else 'evaluate'
+            
             iterator = torch.utils.data.DataLoader(self.incremental_loader,
                                                    batch_size=self.args.batch_size, shuffle=True, **self.kwargs)
+            cnt = 0
             for data, target in tqdm(iterator):
+                cnt +=1
                 data, target = data.cuda(), target.cuda()
                 if data.shape[0]<4:
                     continue
@@ -349,7 +351,15 @@ class ResultLogger():
                     _, features = self.model.forward(data, feature_return=True)
                 except:
                     continue
-                    
+                
+                if cnt == 1 and 'CutMix' in self.args.date:
+                    dic = {'img':data[:16].cpu().numpy(),
+                           "target": target[:16].cpu().numpy()}
+                    path = 'Mix_img.pkl'
+                    with open('CutMix_img/' + path, "wb") as f:
+                        pickle.dump(dic, f)
+
+                
                 class_means.index_add_(0, target, features.data)
                 totalFeatures.index_add_(0, target, torch.ones_like(target.unsqueeze(1)).float().cuda())
                 
@@ -426,7 +436,8 @@ class ResultLogger():
 
         if self.args.distill != 'None':
             self.log_name += '_distill_{}'.format(self.args.distill)
-        
+        if self.args.trainer == 'gda':
+            self.log_name += '_eta_{}'.format(self.args.eta)
         if self.args.bft:
             self.log_name += '_bft_lr_{}'.format(self.args.bft_lr)
         

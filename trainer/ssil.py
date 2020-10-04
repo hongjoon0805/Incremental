@@ -39,7 +39,8 @@ class Trainer(trainer.GenericTrainer):
             iterator = zip(self.train_iterator, exemplar_iterator)
         else:
             iterator = self.train_iterator
-            
+        
+        self.incremental_loader.mode = 'train'
         for samples in tqdm(iterator):
             if tasknum > 0:
                 curr, prev = samples

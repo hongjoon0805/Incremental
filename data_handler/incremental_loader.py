@@ -9,6 +9,39 @@ import torch.utils.data as td
 from sklearn.utils import shuffle
 from PIL import Image
 
+def CutMix(img, mix_img):
+    
+    # generate mixed sample
+    lam = np.random.beta(1, 1)
+    size = img.size()
+    
+    if len(size) == 4:
+        W = size[2]
+        H = size[3]
+    elif len(size) == 3:
+        W = size[1]
+        H = size[2]
+    else:
+        raise Exception
+
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
+
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    img[:, bbx1:bbx2, bby1:bby2] = mix_img[:, bbx1:bbx2, bby1:bby2]
+    
+    return img
+
+
 class IncrementalLoader(td.Dataset):
     def __init__(self, dataset, args):
         self.dataset = dataset
@@ -34,7 +67,7 @@ class IncrementalLoader(td.Dataset):
         
         self.tr_idx = range(self.train_end_idx)
         self.eval_idx = range(self.train_end_idx)
-        self.moment_idx = range(self.train_end_idx)
+        self.CutMix_idx = range(self.train_end_idx)
         
         self.memory_buffer = []
         self.exemplar = []
@@ -84,7 +117,8 @@ class IncrementalLoader(td.Dataset):
                 self.tr_idx += range(start, end-val_per_class)
         
         self.eval_idx = list(self.tr_idx) + self.exemplar
-        self.moment_idx = list(self.tr_idx) + self.exemplar * 10
+        factor = int(len(list(self.tr_idx)) / len(self.exemplar))
+        self.CutMix_idx = list(self.tr_idx) + self.exemplar * factor
         if self.args.trainer != 'ssil' and self.args.trainer != 'lwf':
             self.tr_idx = list(self.tr_idx) + self.exemplar
             
@@ -165,8 +199,8 @@ class IncrementalLoader(td.Dataset):
             return len(self.tr_idx)
         elif self.mode == 'evaluate':
             return len(self.eval_idx)
-        elif self.mode == 'moment':
-            return len(self.moment_idx)
+        elif self.mode == 'CutMix':
+            return len(self.CutMix_idx)
         elif self.mode == 'bias':
             return len(self.validation_buffer)
         elif self.mode == 'b-ft':
@@ -180,12 +214,17 @@ class IncrementalLoader(td.Dataset):
         data = self.dataset.train_data
         labels = self.dataset.train_labels
         transform = self.dataset.train_transform
+        Mix = False
         if self.mode == 'train':
             index = self.tr_idx[index]
-        if self.mode == 'evaluate':
+        elif self.mode == 'evaluate':
             index = self.eval_idx[index]
-        elif self.mode == 'moment':
-            index = self.moment_idx[index]
+        elif self.mode == 'CutMix':
+            index = self.CutMix_idx[index]
+            label = labels[index]
+            if label < self.end - self.args.step_size:
+                mix_index = np.random.choice(self.memory_buffer[label])
+                Mix = True
         elif self.mode == 'bias': # for bic bias correction
             index = self.validation_buffer[index]
         elif self.mode == 'b-ft':
@@ -205,7 +244,18 @@ class IncrementalLoader(td.Dataset):
             img = Image.open(img, mode='r').convert('RGB')
         
         img = transform(img)
-
+        
+        if Mix:
+            mix_img = data[mix_index]
+            
+            try:
+                mix_img = Image.fromarray(mix_img)
+            except:
+                mix_img = Image.open(mix_img, mode='r').convert('RGB')
+            
+            mix_img = transform(mix_img)
+            img = CutMix(img, mix_img)
+            
         return img, labels[index]
 
 class ResultLoader(td.Dataset):

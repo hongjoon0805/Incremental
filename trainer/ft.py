@@ -26,9 +26,9 @@ class NormedLinear(torch.nn.Module):
 class Trainer(trainer.GenericTrainer):
     def __init__(self, IncrementalLoader, model, args):
         super().__init__(IncrementalLoader, model, args)
-        if 'Hinge' in self.args.date:
-            self.model.module.fc = NormedLinear(512, 1004).cuda()
-        self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
+        #if 'Hinge' in self.args.date:
+        #    self.model.module.fc = NormedLinear(512, 1004).cuda()
+        #self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
         
     def balance_fine_tune(self):
         self.update_frozen_model()
@@ -48,13 +48,13 @@ class Trainer(trainer.GenericTrainer):
         end = self.incremental_loader.end
         mid = end - self.args.step_size
         
-        if 'Hinge' in self.args.date:
+        if 'Hinge' in self.args.date or 'LDAM' in self.args.date:
             cls_num_list = np.ones(end)
             cls_num_list = self.incremental_loader.get_cls_num_list()
             
             #self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
-            #self.loss = trainer.LDAMLoss(cls_num_list)
-            self.loss = torch.nn.MultiMarginLoss(reduction='none')
+            self.loss = trainer.LDAMLoss(cls_num_list, s=1, max_m=2.0)
+            #self.loss = torch.nn.MultiMarginLoss(reduction='none')
         
         #if self.incremental_loader.t == 0:
             #self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
