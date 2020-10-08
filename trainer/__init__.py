@@ -19,8 +19,9 @@ class ResultLogger():
         self.incremental_loader = incremental_loader
         self.args = args
         self.kwargs = {'num_workers': args.workers, 'pin_memory': True}
-#         self.option = 'Euclidean'
-        self.option = 'Mahalanobis'
+        self.option = 'Euclidean'
+        if 'Mahalanobis' in self.args.date:
+            self.option = 'Mahalanobis'
         self.result = {}
         
         # For IL2M

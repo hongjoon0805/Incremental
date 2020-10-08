@@ -41,13 +41,22 @@ class Trainer(trainer.GenericTrainer):
         end = self.incremental_loader.end
         start = end-self.args.step_size
         
+        
+        if 'LDAM' in self.args.date:
+            cls_num_list = np.ones(end)
+            cls_num_list = self.incremental_loader.get_cls_num_list()
+            self.loss = trainer.LDAMLoss(cls_num_list, s=1, max_m=self.args.margin)
+        
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
             try:
                 output = self.model(data)[:,:end]
             except:
                 continue
-            loss_CE = self.loss(output, target)
+            if bft:
+                loss_CE = torch.nn.CrossEntropyLoss(reduction='mean')(output, target)
+            else:
+                loss_CE = self.loss(output, target)
             
             loss_KD = 0
             if tasknum > 0:
@@ -61,21 +70,21 @@ class Trainer(trainer.GenericTrainer):
                     
                     score = score[:,:start].data
                 
-                    soft_target = F.softmax(score / T, dim=1)
-                    output_log = F.log_softmax(output[:,:start] / T, dim=1)
-                    loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+#                     soft_target = F.softmax(score / T, dim=1)
+#                     output_log = F.log_softmax(output[:,:start] / T, dim=1)
+#                     loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
                     
-#                     loss_KD = torch.zeros(tasknum).cuda()
-#                     for t in range(tasknum):
+                    loss_KD = torch.zeros(tasknum).cuda()
+                    for t in range(tasknum):
 
-#                         # local distillation
-#                         start_KD = (t) * self.args.step_size
-#                         end_KD = (t+1) * self.args.step_size
+                        # local distillation
+                        start_KD = (t) * self.args.step_size
+                        end_KD = (t+1) * self.args.step_size
 
-#                         soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
-#                         output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
-#                         loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
-#                     loss_KD = loss_KD.sum()
+                        soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
+                        output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
+                        loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+                    loss_KD = loss_KD.sum()
                 else:
                     soft_target = F.softmax(score[:,start:end] / T, dim=1)
                     output_log = F.log_softmax(output[:,start:end] / T, dim=1)

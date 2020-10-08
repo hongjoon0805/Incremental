@@ -30,7 +30,7 @@ class Trainer(trainer.GenericTrainer):
     
     def train(self, epoch, mean = None, precision = None):
         
-        T=2
+        T=0.125
         print('T: ', T)
         
         self.model.train()
@@ -41,23 +41,24 @@ class Trainer(trainer.GenericTrainer):
         mid = end-self.args.step_size
         start = 0
         lamb = mid / end
+        
+        if 'LDAM' in self.args.date:
+            cls_num_list = np.ones(end)
+            cls_num_list = self.incremental_loader.get_cls_num_list()
+            self.loss = trainer.LDAMLoss(cls_num_list, s=1, max_m=self.args.margin)
+        
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
 
             output = self.model(data)
-            loss_CE = self.loss(output, target)
+            loss_CE = self.loss(output[:,:end], target)
             
             loss_KD = 0
             
             if tasknum > 0:
                 out, feature_prev = self.model_fixed(data, feature_return=True)
                 score = self.compute_score(feature_prev, mean, precision, sqrt = True) * self.args.eta
-                if 'min_max' in self.args.date:
-                    min_val = score.min(dim=1, keepdim=True)[0]
-                    max_val = score.max(dim=1, keepdim=True)[0]
-                    max_min = max_val - min_val
-                    
-                    score = score / (max_min + 1e-11)
+                
                 
 #                 sample_num = 20
                 

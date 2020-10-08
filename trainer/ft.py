@@ -49,12 +49,12 @@ class Trainer(trainer.GenericTrainer):
         mid = end - self.args.step_size
         
         if 'Hinge' in self.args.date or 'LDAM' in self.args.date:
-            cls_num_list = np.ones(end)
+            #cls_num_list = np.ones(end)
             cls_num_list = self.incremental_loader.get_cls_num_list()
             
             #self.loss = trainer.LDAMLoss(cls_num_list, max_m=1, s=1, mode='Hinge')
             self.loss = trainer.LDAMLoss(cls_num_list, s=1, max_m=self.args.margin)
-            #self.loss = torch.nn.MultiMarginLoss(reduction='none')
+            #self.loss = torch.nn.MultiMarginLoss(reduction='none', p=1)
         
         #if self.incremental_loader.t == 0:
             #self.loss = torch.nn.CrossEntropyLoss(reduction='mean')
@@ -86,7 +86,18 @@ class Trainer(trainer.GenericTrainer):
 #             print("loss",loss_CE)
 #             loss_CE = loss_CE.mean()
 #             print(loss_CE, torch.min(output[:, :end]), torch.max(output[:,:end]))
-            
+#             if loss_CE.item() == 0:
+#                 print("feature", torch.isnan(feature).sum())
+#                 print("logit", torch.isnan(output).sum())
+#                 print("fc weight", torch.isnan(self.model.module.fc.weight.data).sum())
+#                 nn = 0
+#                 weight = 0
+#                 for kkk in self.model.parameters():
+#                     nn += torch.isnan(kkk).sum().item()
+#                     weight += (1-torch.isnan(kkk)).sum().item()
+#                 print(nn, weight)
+#                 for kk in range(999999999999999):
+#                     continue
             self.optimizer.zero_grad()
             (loss_CE).backward()
             self.optimizer.step()
