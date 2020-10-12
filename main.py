@@ -72,11 +72,6 @@ for t in range(tasknum):
     myTrainer.update_frozen_model()
     myTrainer.setup_training(lr)
     flag = 0
-    if '201005_ft_LDAMSoft_lr0.1_noscale_withoutNorm_margin7.0' in args.date and args.trainer == 'ft_nem':
-        name = 'models/trained_model/201005_ft_LDAMSoft_lr0.1_noscale_withoutNorm_margin7.0_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
-        state_dict = torch.load(name)
-        myTrainer.model.load_state_dict(state_dict)
-        flag = 1
         
 #     if args.trainer == 'ft_nem':
 #         name = 'models/trained_model/200729_FT_BIC_Imagenet_ft_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_task_%d.pt'%t

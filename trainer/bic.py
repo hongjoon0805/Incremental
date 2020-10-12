@@ -77,12 +77,7 @@ class Trainer(trainer.GenericTrainer):
         for data, target in tqdm(self.train_iterator):
             data, target = data.cuda(), target.cuda()
 
-            output, feature_curr = self.model(data, feature_return=True)
-            score, feature_prev = self.model_fixed(data, feature_return=True)
-                
-            # print("shape of curr, prev feature: (expected: [batch, 512])", feature_curr.shape, feature_prev.shape)
-                
-            output = output[:, :end]
+            output = self.model(data)[:, :end]
 
             loss_CE = self.loss(output, target)
 
@@ -92,31 +87,30 @@ class Trainer(trainer.GenericTrainer):
                 end_KD = mid
                 start_KD = end_KD - self.args.step_size
 
-                if self.distill == 'kd':
-                    layer = self.bias_correction_layer_arr[-1] # last bias correction layer
-
-                    score = score[:,:end_KD].data
-                    score = torch.cat([score[:,:start_KD], layer(score[:,start_KD:end_KD])], dim=1)
-
+                layer = self.bias_correction_layer_arr[-1] # last bias correction layer
+                
+                score = self.model_fixed(data)[:,:end_KD].data
+                score = torch.cat([score[:,:start_KD], layer(score[:,start_KD:end_KD])], dim=1)
+                
+                if self.distill == 'global':
+                
                     soft_target = F.softmax(score / T, dim=1)
                     output_log = F.log_softmax(output[:,:end_KD] / T, dim=1)
                     loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
-                        
-                elif self.distill == 'feature_l2':
-                        # l2 feature loss
-                    loss_KD = torch.mean(torch.norm(feature_curr - feature_prev, p=2, dim=1))
-                    # print("shape of loss_distill: (expected: )", loss_.shape)
                     
-                elif self.distill == 'feature_cos':
-                    # cos_sim = dot(a, b) / norm(a) * norm(b) 
-                    # normalized 된 feature 사용하면 뒤의 norm(a) , norm(b) 가 어차피 1, 1 이니까 필요 없는 과정임.
-                    # normalize가 cos sim에 영향을 주진 않을듯.
+                elif self.distill == 'local':
+                    loss_KD = torch.zeros(tasknum).cuda()
+                    for t in range(tasknum):
 
-                    cos_sim = torch.sum(feature_curr * feature_prev, dim=1)
+                        # local distillation
+                        start_KD = (t) * self.args.step_size
+                        end_KD = (t+1) * self.args.step_size
 
-                    loss_KD = 1 - torch.mean(cos_sim)
-                                        
-
+                        soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
+                        output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
+                        loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+                    loss_KD = loss_KD.sum()
+                    
             self.optimizer.zero_grad()
             (lamb*loss_KD + (1-lamb)*loss_CE).backward()
             self.optimizer.step()

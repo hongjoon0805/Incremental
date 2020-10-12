@@ -69,9 +69,8 @@ def get_args():
                                  'ft_lsm'], 
                         help='(default=%(default)s)')
     parser.add_argument('--distill', default='None', type=str, required=False,
-                        choices=['kd', 
-                                 'feature_l2',
-                                'feature_cos'], 
+                        choices=['local', 
+                                 'feature',], 
                         help='(default=%(default)s)')
     
 #     parser = deepspeed.add_config_arguments(parser)
