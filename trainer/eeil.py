@@ -23,15 +23,16 @@ class Trainer(trainer.GenericTrainer):
             exit()      
     
     def balance_fine_tune(self):
+        t = self.incremental_loader.t
         self.update_frozen_model()
-        self.setup_training(self.args.bft_lr)
+        self.setup_training(self.args.bft_lr / (t+1))
         
         self.incremental_loader.update_bft_buffer()
         self.incremental_loader.mode = 'b-ft'
         
         schedule = np.array(self.args.schedule)
-        bftepoch = int(self.args.nepochs*3/4)
-        for epoch in range(bftepoch):
+#         bftepoch = int(self.args.nepochs*3/4)
+        for epoch in range(30):
             self.update_lr(epoch, schedule)
             self.train(epoch, bft=True)
         
@@ -75,7 +76,7 @@ class Trainer(trainer.GenericTrainer):
                 
                         soft_target = F.softmax(score / T, dim=1)
                         output_log = F.log_softmax(output[:,:mid] / T, dim=1)
-                        loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+                        loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                     
                     elif self.distill == 'local':
                         loss_KD = torch.zeros(tasknum).cuda()

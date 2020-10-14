@@ -96,7 +96,7 @@ class Trainer(trainer.GenericTrainer):
                 
                     soft_target = F.softmax(score / T, dim=1)
                     output_log = F.log_softmax(output[:,:end_KD] / T, dim=1)
-                    loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean')
+                    loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                     
                 elif self.distill == 'local':
                     loss_KD = torch.zeros(tasknum).cuda()
