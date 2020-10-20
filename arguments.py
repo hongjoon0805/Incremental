@@ -70,7 +70,8 @@ def get_args():
                         help='(default=%(default)s)')
     parser.add_argument('--distill', default='None', type=str, required=False,
                         choices=['local', 
-                                 'global',], 
+                                 'global',
+                                 'mix',], 
                         help='(default=%(default)s)')
     
 #     parser = deepspeed.add_config_arguments(parser)

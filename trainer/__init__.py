@@ -121,8 +121,8 @@ class ResultLogger():
         pred_1 = out.data.max(1, keepdim=True)[1]
         pred_5 = torch.topk(out, 5, dim=1)[1]
         
-        print(pred_5[:10])
-        print(pred_5[-10:])
+#         print(pred_5[:10])
+#         print(pred_5[-10:])
 
         correct_1 = pred_1.eq(target.data.view_as(pred_1)).sum().item()
         correct_5 = pred_5.eq(target.data.unsqueeze(1).expand(pred_5.shape)).sum().item()
@@ -448,7 +448,7 @@ class ResultLogger():
         if self.args.trainer == 'ssil':
             self.log_name += '_replay_{}'.format(self.args.replay_batch_size)
             
-        if self.args.trainer == 'ssil' or 'ft' in  self.args.trainer or self.args.trainer == 'il2m':
+        if 'ft' in  self.args.trainer or self.args.trainer == 'il2m':
             self.log_name += '_factor_{}'.format(self.args.factor)
             
         if self.args.prev_new:

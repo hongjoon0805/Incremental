@@ -90,6 +90,25 @@ class Trainer(trainer.GenericTrainer):
                             output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
                             loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
                         loss_KD = loss_KD.sum()
+                    elif self.distill == 'mix':
+                        mix_lamb = 0.5
+                        soft_target = F.softmax(score / T, dim=1)
+                        output_log = F.log_softmax(output[:,:mid] / T, dim=1)
+                        global_loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+                        
+                        loss_KD = torch.zeros(tasknum).cuda()
+                        for t in range(tasknum):
+
+                            # local distillation
+                            start_KD = (t) * self.args.step_size
+                            end_KD = (t+1) * self.args.step_size
+
+                            soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
+                            output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
+                            loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+                        loss_KD = loss_KD.sum()
+                        
+                        loss_KD = loss_KD * mix_lamb + (1-mix_lamb) * global_loss_KD
                 else:
                     soft_target = F.softmax(score[:,mid:end] / T, dim=1)
                     output_log = F.log_softmax(output[:,mid:end] / T, dim=1)

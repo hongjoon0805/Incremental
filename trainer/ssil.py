@@ -20,10 +20,16 @@ class Trainer(trainer.GenericTrainer):
         
         self.loss = torch.nn.CrossEntropyLoss(reduction='sum')
         
+        self.distill = args.distill
+        if self.distill == 'None':
+            print(" @!@!@!@!@!@!@!@!@!@!@!@!@!@ NO DISTILL ! YOU IDIOT @!@!@!@!@!@!@!@!@!@!@!@!@!@!@! ")
+            exit()      
+        
     def train(self, epoch):
         
         self.model.train()
         print("Epochs %d"%epoch)
+        T=2
         
         tasknum = self.incremental_loader.t
         end = self.incremental_loader.end
@@ -40,7 +46,8 @@ class Trainer(trainer.GenericTrainer):
         else:
             iterator = self.train_iterator
         
-        self.incremental_loader.mode = 'train'
+        
+        self.incremental_loader.mode == 'trian'
         for samples in tqdm(iterator):
             if tasknum > 0:
                 curr, prev = samples
@@ -63,6 +70,7 @@ class Trainer(trainer.GenericTrainer):
                 batch_size = data.shape[0]
             
             output = self.model(data)
+            loss_KD = 0
             
             if self.args.ablation == 'naive':
                 target = torch.cat((target, target_r))
@@ -80,10 +88,31 @@ class Trainer(trainer.GenericTrainer):
                     prev = output[batch_size:batch_size+replay_size,start:mid]
                     loss_CE_prev = self.loss(prev, target_r)
                     loss_CE = (loss_CE_curr + loss_CE_prev) / (batch_size + replay_size)
+                    
+                    # loss_KD
+                    score = self.model_fixed(data)[:,:mid].data
+                    if self.distill == 'global':
+                        soft_target = F.softmax(score / T, dim=1)
+                        output_log = F.log_softmax(output[:,:mid] / T, dim=1)
+                        loss_KD = F.kl_div(output_log, soft_target, reduction='batchmean') * (T ** 2)
+                        
+                    elif self.distill == 'local':
+                        loss_KD = torch.zeros(tasknum).cuda()
+                        for t in range(tasknum):
+
+                            # local distillation
+                            start_KD = (t) * self.args.step_size
+                            end_KD = (t+1) * self.args.step_size
+
+                            soft_target = F.softmax(score[:,start_KD:end_KD] / T, dim=1)
+                            output_log = F.log_softmax(output[:,start_KD:end_KD] / T, dim=1)
+                            loss_KD[t] = F.kl_div(output_log, soft_target, reduction='batchmean') * (T**2)
+                        loss_KD = loss_KD.sum()
 
                 else:
                     loss_CE = loss_CE_curr / batch_size
                 
             self.optimizer.zero_grad()
-            (loss_CE).backward()
+            (loss_KD + loss_CE).backward()
             self.optimizer.step()
+

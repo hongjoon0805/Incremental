@@ -62,7 +62,7 @@ for t in range(tasknum):
     print("SEED:", seed, "MEMORY_BUDGET:", m, "tasknum:", t)
     # Add new classes to the train, and test iterator
     lr = args.lr
-    if args.trainer == 'ssil' or 'ft' in  args.trainer:
+    if 'ft' in  args.trainer:
         if 'ft' in  args.trainer:
             lr = args.lr / (t+1)
         if t==1:
@@ -73,10 +73,23 @@ for t in range(tasknum):
     myTrainer.setup_training(lr)
     flag = 0
     
-    if args.trainer == 'ft':
-        name = 'models/trained_model/201005_ft_LDAMSoft_lr0.1_noscale_withoutNorm_margin4.0_Imagenet_ft_0_memsz_20000_base_100_step_100_batch_128_epoch_100_factor_4_task_%d.pt'%(t+1)
+    if args.trainer == 'ssil' and t == 0:
+        name = 'models/trained_model/SSIL_Imagenet_ssil_0_memsz_20000_base_100_step_100_batch_128_epoch_100_distill_local_replay_32_task_%d.pt'%(t+1)
         state_dict = torch.load(name)
         myTrainer.model.load_state_dict(state_dict)
+        flag = 1
+    
+    if args.trainer == 'bic':
+        if args.distill == 'local':
+            name = 'models/trained_model/BIC_local_KD_nolamb_Imagenet_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_distill_local_task_%d.pt'%(t+1)
+            bias_name = 'models/trained_model/BIC_local_KD_nolamb_Imagenet_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_distill_local_bias_task_%d.pt'%(t+1)
+        elif args.distill == 'global':
+            name = 'models/trained_model/BIC_local_KD_nolamb_Imagenet_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_distill_global_task_%d.pt'%(t+1)
+            bias_name = 'models/trained_model/BIC_local_KD_nolamb_Imagenet_bic_0_memsz_20000_base_100_step_100_batch_128_epoch_100_distill_global_bias_task_%d.pt'%(t+1)
+        state_dict = torch.load(name)
+        myTrainer.model.load_state_dict(state_dict)
+        state_dict = torch.load(bias_name)
+        myTrainer.bias_correction_layer.load_state_dict(state_dict)
         flag = 1
     
     # Running nepochs epochs
@@ -124,25 +137,25 @@ for t in range(tasknum):
         myTrainer.balance_fine_tune()
     
     # BiC Bias correction
-    if t > 0 and 'bic' in args.trainer:
+    if t > 0 and 'bic' in args.trainer and flag == 0:
         myTrainer.train_bias_correction()
             
-#     logger.evaluate(mode='train', get_results = False)
+    logger.evaluate(mode='train', get_results = False)
     logger.evaluate(mode='test', get_results = True)
     
     start = 0
     end = args.base_classes
     
-#     result_loader.reset()
-#     kwargs = {'num_workers': args.workers, 'pin_memory': True}
-#     iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
-#     for i in range(t+1):
-#         logger.get_task_accuracy(start, end, t, iterator)
+    result_loader.reset()
+    kwargs = {'num_workers': args.workers, 'pin_memory': True}
+    iterator = torch.utils.data.DataLoader(result_loader, batch_size=100, **kwargs)
+    for i in range(t+1):
+        logger.get_task_accuracy(start, end, t, iterator)
         
-#         start = end
-#         end += args.step_size
+        start = end
+        end += args.step_size
         
-#         result_loader.task_change()
+        result_loader.task_change()
     
     myTrainer.increment_classes()
     logger.save_results()
