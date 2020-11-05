@@ -35,6 +35,8 @@ class TrainerFactory():
             import trainer.ft_wa as trainer
         elif args.trainer == 'eeil':
             import trainer.eeil as trainer
+        elif args.trainer == 'vanilla':
+            import trainer.vanilla as trainer
         elif args.trainer == 'ft_bic_focal':
             import trainer.ft_bic_focal as trainer
         elif args.trainer == 'FCft':

@@ -65,6 +65,7 @@ def get_args():
                                  'ft_bic_focal',
                                  'eeil',
                                  'FCft', 
+                                 'vanilla',
                                  'gda',
                                  'ft_lsm'], 
                         help='(default=%(default)s)')
