@@ -65,7 +65,8 @@ class ResultLogger():
             target = torch.cat(target_matrix, dim=0)
             self.get_accuracy(mode, out, target)
             
-            if mode == 'test' and get_results and t > 0:
+#             if mode == 'test' and get_results and t > 0:
+            if get_results and t > 0:
                 self.get_statistics(out, target)
                 self.get_confusion_matrix(out, target)
                 self.get_cosine_similarity_score_softmax_average(out, features, target)
@@ -451,8 +452,10 @@ class ResultLogger():
         if 'ft' in  self.args.trainer or self.args.trainer == 'il2m':
             self.log_name += '_factor_{}'.format(self.args.factor)
             
-        if self.args.prev_new:
-            self.log_name += '_prev_new'
+        if self.args.SS:
+            self.log_name += '_SS'
+        if self.args.ablation != 'None':
+            self.log_name += self.args.ablation
             
     def print_result(self, mode, t):
         print(mode + " top-1: %0.2f"%self.result[mode + '-top-1'][t])

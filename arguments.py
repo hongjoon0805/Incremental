@@ -33,7 +33,7 @@ def get_args():
     parser.add_argument('--debug', type=int, default=1, help='Use debug')
     parser.add_argument('--benchmark', action='store_true', default=False, help='Use cudnn.benchmark')
     parser.add_argument('--eval', action='store_true', default=False, help='Evaluation')
-    parser.add_argument('--prev-new', action='store_true', default=False, help='split prev/new')
+    parser.add_argument('--SS', action='store_true', default=False, help='Use separated softmax')
     parser.add_argument('--dataset', default='', type=str, required=True,
                         choices=['CIFAR10',
                                  'CIFAR100', 

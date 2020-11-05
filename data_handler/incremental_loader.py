@@ -117,7 +117,7 @@ class IncrementalLoader(td.Dataset):
                 self.tr_idx += range(start, end-val_per_class)
         
         self.eval_idx = list(self.tr_idx) + self.exemplar
-        factor = int(len(list(self.tr_idx)) / len(self.exemplar))
+        factor = int(len(list(self.tr_idx)) / (len(self.exemplar)+1))
         self.CutMix_idx = list(self.tr_idx) + self.exemplar * factor
         if self.args.trainer != 'ssil' and self.args.trainer != 'lwf':
             self.tr_idx = list(self.tr_idx) + self.exemplar
